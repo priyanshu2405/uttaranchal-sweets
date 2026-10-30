@@ -1,0 +1,79 @@
+name: uttaranchal_app
+description: "Uttaranchal Dairy & Sweets — clickable client-demo prototype (customer app + milk delivery staff app)."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+# Deliberately dependency-light: the prototype runs on the Flutter SDK alone,
+# so it builds first time on any machine with no plugin/CocoaPods surprises.
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+
+  fonts:
+    - family: CormorantGaramond
+      fonts:
+        - asset: assets/fonts/Cormorant-Garamond-normal-500.ttf
+          weight: 500
+        - asset: assets/fonts/Cormorant-Garamond-normal-600.ttf
+          weight: 600
+        - asset: assets/fonts/Cormorant-Garamond-normal-700.ttf
+          weight: 700
+        - asset: assets/fonts/Cormorant-Garamond-italic-500.ttf
+          weight: 500
+          style: italic
+        - asset: assets/fonts/Cormorant-Garamond-italic-600.ttf
+          weight: 600
+          style: italic
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/DM-Sans-normal-400.ttf
+          weight: 400
+        - asset: assets/fonts/DM-Sans-normal-500.ttf
+          weight: 500
+        - asset: assets/fonts/DM-Sans-normal-600.ttf
+          weight: 600
+        - asset: assets/fonts/DM-Sans-normal-700.ttf
+          weight: 700
+    - family: NotoSerifDevanagari
+      fonts:
+        - asset: assets/fonts/Noto-Serif-Devanagari-normal-400.ttf
+          weight: 400
+        - asset: assets/fonts/Noto-Serif-Devanagari-normal-600.ttf
+          weight: 600
+
+# ---- Branding (run once via setup script) ----
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#FFCD45"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  remove_alpha_ios: true
+  min_sdk_android: 21
+
+flutter_native_splash:
+  color: "#FFCD45"
+  image: assets/icon/splash_logo.png
+  android_12:
+    color: "#FFCD45"
+    image: assets/icon/splash_logo.png
+  ios: true
+  android: true
+  web: false
