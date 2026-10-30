@@ -546,7 +546,7 @@ class _MilkPauseScreenState extends State<MilkPauseScreen> {
             Text('$dayList ${monthName(days.first.month)}', style: T.sans(12)),
             Text('Your regular ${app.milkLitres} L plan resumes on ${dayMonth(resume)}.', style: T.sans(12)),
             const Divider(color: AppColors.border, height: 26),
-            KV('Charges for paused days', '₹0', color: AppColors.teal),
+            const KV('Charges for paused days', '₹0', color: AppColors.teal),
           ]),
         ),
         const Gap(12),

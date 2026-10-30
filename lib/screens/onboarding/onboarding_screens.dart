@@ -44,7 +44,7 @@ class WelcomeScreen extends StatelessWidget {
                           child: const BrandLogo(),
                         ),
                         const SizedBox(height: 22),
-                        _FadeUp(
+                        const _FadeUp(
                           child: ArchImage(Img.sweets, width: 224, height: 236, arch: 112),
                         ),
                         const SizedBox(height: 26),
