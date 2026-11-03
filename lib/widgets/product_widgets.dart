@@ -8,11 +8,52 @@ import '../data/catalog.dart';
 import '../state/app_state.dart';
 import 'feedback.dart';
 
-void addToBag(BuildContext context, Product p, {String? weight, int qty = 1}) {
+/// Adds a product (in its default or chosen size) to the bag and tells the customer.
+void addToBag(BuildContext context, Product p, {int? optionId, int qty = 1}) {
+  final error = context.appRead.addProduct(p, optionId: optionId, qty: qty);
+  if (error != null) {
+    HapticFeedback.heavyImpact();
+    toast(context, error);
+    return;
+  }
   HapticFeedback.mediumImpact();
-  context.appRead.addProduct(p, weight: weight, qty: qty);
   toast(context, '${p.name} added to your bag', action: 'View bag', onAction: () => go(context, R.bag));
 }
+
+/// Shop photo from the website (or a bundled picture while it loads / if it fails).
+class NetImage extends StatelessWidget {
+  final String? url;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final String fallback;
+  const NetImage(this.url, {super.key, this.width, this.height, this.fit = BoxFit.cover, this.fallback = Img.sweets});
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url ?? '';
+    Widget asset() => Image.asset(fallback, width: width, height: height, fit: fit);
+    if (u.startsWith('assets/')) return Image.asset(u, width: width, height: height, fit: fit);
+    if (!u.startsWith('http')) return asset();
+    return Image.network(
+      u,
+      width: width,
+      height: height,
+      fit: fit,
+      filterQuality: FilterQuality.medium,
+      loadingBuilder: (context, child, progress) => progress == null ? child : Container(width: width, height: height, color: AppColors.peach),
+      errorBuilder: (_, __, ___) => asset(),
+    );
+  }
+}
+
+/// Bundled picture that best matches a product's category (used as the fallback).
+String fallbackFor(Product p) => switch (p.category?.slug) {
+      'snacks' => Img.namkeen,
+      'milk-products' => Img.milkSweets,
+      'regional' => Img.milkSweets,
+      _ => Img.sweets,
+    };
 
 class ProductCard extends StatelessWidget {
   final Product product;
@@ -20,6 +61,7 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final soldOut = product.soldOut;
     return Material(
       color: AppColors.surface,
       shape: const RoundedRectangleBorder(
@@ -28,7 +70,7 @@ class ProductCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => go(context, R.product, args: product.id),
+        onTap: () => go(context, R.product, args: product),
         child: Padding(
           padding: const EdgeInsets.all(7),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -36,7 +78,18 @@ class ProductCard extends StatelessWidget {
               tag: 'product-${product.id}',
               child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(58), bottom: Radius.circular(10)),
-                child: AspectRatio(aspectRatio: 1.45, child: Image.asset(product.image, fit: BoxFit.cover)),
+                child: AspectRatio(
+                  aspectRatio: 1.45,
+                  child: Stack(fit: StackFit.expand, children: [
+                    NetImage(product.imageUrl, fallback: fallbackFor(product)),
+                    if (soldOut)
+                      Container(
+                        color: const Color(0x99FFF9ED),
+                        alignment: Alignment.center,
+                        child: Text('Sold out', style: T.sans(12, color: AppColors.berry, weight: FontWeight.w700)),
+                      ),
+                  ]),
+                ),
               ),
             ),
             Padding(
@@ -47,13 +100,16 @@ class ProductCard extends StatelessWidget {
                 Text(product.subtitle, style: T.tiny(), maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 10),
                 Row(children: [
-                  Expanded(child: Text(rupees(product.price500g), style: T.sans(13.5, color: AppColors.teal, weight: FontWeight.w700))),
+                  Expanded(
+                    child: Text(product.priceLabel.isNotEmpty ? product.priceLabel : money(product.price),
+                        style: T.sans(13.5, color: AppColors.teal, weight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
                   Material(
-                    color: AppColors.berry,
+                    color: soldOut ? AppColors.border : AppColors.berry,
                     borderRadius: BorderRadius.circular(7),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(7),
-                      onTap: () => addToBag(context, product),
+                      onTap: soldOut ? null : () => addToBag(context, product),
                       child: const SizedBox(width: 30, height: 30, child: Icon(Icons.add_rounded, color: AppColors.white, size: 20)),
                     ),
                   ),
@@ -87,5 +143,37 @@ class ProductGrid extends StatelessWidget {
       ));
     }
     return Column(children: rows);
+  }
+}
+
+/// Loading / error / empty states used by every screen that waits for the server.
+class LoadState extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final VoidCallback? onRetry;
+  final String? empty;
+  const LoadState({super.key, this.loading = false, this.error, this.onRetry, this.empty});
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.berry))),
+      );
+    }
+    final text = error ?? empty ?? '';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 36),
+      child: Column(children: [
+        Icon(error != null ? Icons.wifi_off_rounded : Icons.inbox_outlined, size: 40, color: AppColors.border),
+        const SizedBox(height: 12),
+        Text(text, textAlign: TextAlign.center, style: T.body()),
+        if (error != null && onRetry != null) ...[
+          const SizedBox(height: 12),
+          TextButton(onPressed: onRetry, child: Text('Try again', style: T.sans(13, color: AppColors.berry, weight: FontWeight.w700))),
+        ],
+      ]),
+    );
   }
 }

@@ -1,17 +1,19 @@
 name: uttaranchal_app
-description: "Uttaranchal Dairy & Sweets — clickable client-demo prototype (customer app + milk delivery staff app)."
+description: "Uttaranchal Dairy & Sweets — customer app + shop staff app, connected to the website (Laravel API)."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
 
-# Deliberately dependency-light: the prototype runs on the Flutter SDK alone,
-# so it builds first time on any machine with no plugin/CocoaPods surprises.
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  http: ^1.2.2                # talks to the Laravel API
+  shared_preferences: ^2.3.2  # keeps sign-in, bag and favourites on the phone
+  razorpay_flutter: ^1.4.0    # UPI / card payments (same Razorpay account as the website)
+  url_launcher: ^6.3.0        # directions, call the shop
 
 dev_dependencies:
   flutter_test:
@@ -61,7 +63,7 @@ flutter:
 # ---- Branding (run once via setup script) ----
 flutter_launcher_icons:
   android: true
-  ios: true
+  ios: false
   image_path: "assets/icon/app_icon.png"
   adaptive_icon_background: "#FFCD45"
   adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
@@ -74,6 +76,6 @@ flutter_native_splash:
   android_12:
     color: "#FFCD45"
     image: assets/icon/splash_logo.png
-  ios: true
+  ios: false
   android: true
   web: false

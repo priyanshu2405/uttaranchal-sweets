@@ -13,8 +13,8 @@ class ScreenIndexScreen extends StatelessWidget {
 
   static const customer = <(String, String, String)>[
     ('01', 'Welcome', R.welcome),
-    ('02', 'Mobile sign in', R.signIn),
-    ('03', 'Verify mobile', R.verify),
+    ('02', 'Sign in', R.signIn),
+    ('03', 'Create account', R.verify),
     ('04', 'Delivery location', R.location),
     ('05', 'Customer home', R.home),
     ('06', 'Shop collection', R.collection),
@@ -24,7 +24,7 @@ class ScreenIndexScreen extends StatelessWidget {
     ('10', 'Build a gift box', R.giftBox),
     ('11', 'Bulk / wholesale enquiry', R.bulkEnquiry),
     ('12', 'Shopping bag', R.bag),
-    ('13', 'Redeem loyalty points', R.redeem),
+    ('13', 'Loyalty points (soon)', R.redeem),
     ('14', 'Checkout address', R.checkoutAddress),
     ('15', 'Payment method', R.payment),
     ('16', 'Order confirmation', R.orderConfirmation),
@@ -46,10 +46,14 @@ class ScreenIndexScreen extends StatelessWidget {
     ('32', 'Our story & visit us', R.story),
     ('33', 'Notifications', R.notifications),
     ('34', 'Help & language', R.help),
+    ('··', 'Favourites', R.favourites),
+    ('··', 'FAQ & policies', R.info),
   ];
 
   static const staff = <(String, String, String)>[
-    ('35', 'Delivery staff sign in', R.staffSignIn),
+    ('35', 'Staff sign in', R.staffSignIn),
+    ('··', 'Shop orders (live)', R.staffOrders),
+    ('··', 'Stock', R.staffProducts),
     ('36', 'Distribution dashboard', R.staffDashboard),
     ('37', 'Route & delivery stops', R.staffRoute),
     ('38', 'Delivery stop details', R.staffStop),
@@ -72,7 +76,7 @@ class ScreenIndexScreen extends StatelessWidget {
         const Gap(6),
         for (final s in customer) _row(context, s),
         const Gap(22),
-        const Eyebrow('Milk delivery staff app · 35–42'),
+        const Eyebrow('Staff app'),
         const Gap(6),
         for (final s in staff) _row(context, s),
       ],

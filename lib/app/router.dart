@@ -7,6 +7,7 @@ import '../screens/milk/milk_screens.dart';
 import '../screens/onboarding/onboarding_screens.dart';
 import '../screens/orders/order_screens.dart';
 import '../screens/shop/shop_screens.dart';
+import '../screens/staff/shop_staff_screens.dart';
 import '../screens/staff/staff_screens.dart';
 import 'nav.dart';
 import 'routes.dart';
@@ -26,7 +27,7 @@ class AppRouter {
       R.location => const LocationScreen(),
       R.home => const HomeScreen(),
       R.collection => const CollectionScreen(),
-      R.product => ProductScreen(productId: str),
+      R.product => ProductScreen(product: args is TabSwitch ? null : args),
       R.search => const SearchScreen(),
       R.gifting => const GiftingScreen(),
       R.giftBox => const GiftBoxScreen(),
@@ -37,8 +38,8 @@ class AppRouter {
       R.payment => const PaymentScreen(),
       R.orderConfirmation => const OrderConfirmationScreen(),
       R.orderHistory => const OrderHistoryScreen(),
-      R.tracking => const TrackingScreen(),
-      R.receipt => const ReceiptScreen(),
+      R.tracking => TrackingScreen(number: str),
+      R.receipt => ReceiptScreen(number: str),
       R.milkHub => const MilkHubScreen(),
       R.milkProduct => const MilkProductScreen(),
       R.milkConfigure => const MilkConfigureScreen(),
@@ -54,6 +55,8 @@ class AppRouter {
       R.story => const StoryScreen(),
       R.notifications => const NotificationsScreen(),
       R.help => HelpScreen(reference: str),
+      R.favourites => const FavouritesScreen(),
+      R.info => InfoPageScreen(page: str ?? 'faq'),
       R.staffSignIn => const StaffSignInScreen(),
       R.staffDashboard => const StaffDashboardScreen(),
       R.staffRoute => const StaffRouteScreen(),
@@ -62,6 +65,9 @@ class AppRouter {
       R.staffException => StaffExceptionScreen(stopNumber: intArg),
       R.staffStock => const StaffStockScreen(),
       R.staffSummary => const StaffSummaryScreen(),
+      R.staffOrders => const StaffOrdersScreen(),
+      R.staffOrder => StaffOrderScreen(orderId: intArg),
+      R.staffProducts => const StaffProductsScreen(),
       R.screenIndex => const ScreenIndexScreen(),
       _ => const WelcomeScreen(),
     };

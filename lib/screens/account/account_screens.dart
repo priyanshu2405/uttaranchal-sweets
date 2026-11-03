@@ -1,25 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/nav.dart';
 import '../../app/routes.dart';
 import '../../app/theme.dart';
+import '../../data/api.dart';
 import '../../data/catalog.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../../widgets/feedback.dart';
 import '../../widgets/fields.dart';
+import '../../widgets/product_widgets.dart';
 import '../../widgets/u_scaffold.dart';
 
-// ───────────────────────── 29 · Loyalty points wallet ─────────────────────────
+Future<void> openLink(BuildContext context, String url) async {
+  final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  if (!ok && context.mounted) toast(context, 'Couldn’t open $url');
+}
+
+// ───────────────────────── 29 · Rewards (coming soon) ─────────────────────────
 class RewardsScreen extends StatelessWidget {
   const RewardsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final app = context.app;
-    const milestone = 1500;
-    final toNext = (milestone - app.points).clamp(0, milestone);
     return UScaffold(
       title: 'Sweet rewards',
       nav: NavKind.customer,
@@ -33,116 +38,34 @@ class RewardsScreen extends StatelessWidget {
           color: AppColors.purple,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text('YOUR  AVAILABLE  POINTS', style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w700, spacing: 1.2))),
+              Expanded(child: Text('COMING  SOON', style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w700, spacing: 1.2))),
               const Icon(Icons.stars_rounded, color: AppColors.yellow, size: 24),
             ]),
             const Gap(14),
-            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: app.points.toDouble()),
-                duration: const Duration(milliseconds: 900),
-                curve: Curves.easeOutCubic,
-                builder: (context, v, _) => Text(grouped(v.round()), style: T.display(46, color: AppColors.white)),
-              ),
-              const SizedBox(width: 6),
-              Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('points', style: T.sans(12, color: AppColors.white))),
-            ]),
-            Text('${rupees(AppState.pointsValue(app.points))} to spend on eligible products', style: T.sans(11.5, color: AppColors.white)),
-            const Gap(14),
-            UProgressBar(app.points / milestone),
-            const Gap(10),
-            Text(toNext == 0 ? 'Milestone reached — a sweet surprise awaits!' : '$toNext more points to your next reward milestone', style: T.sans(11, color: AppColors.white)),
+            Text('Points on every order.', style: T.display(30, color: AppColors.white)),
+            const Gap(8),
+            Text('We’re building loyalty points for the app and the website together, so your points are the same wherever you shop.',
+                style: T.sans(11.5, color: AppColors.white, height: 1.55)),
           ]),
         ),
         const Gap(12),
-        Row(children: [
-          SmallButton('Shop with points', icon: Icons.north_east_rounded, onTap: () => goTab(context, R.collection)),
-          const Spacer(),
-          SmallButton('Points activity', filled: false, onTap: () => go(context, R.pointsActivity)),
-        ]),
+        SmallButton('Shop now', icon: Icons.north_east_rounded, onTap: () => goTab(context, R.collection)),
         const Gap(20),
-        const SectionTitle('Earn a little more'),
-        const Gap(4),
-        ActionRow(icon: Icons.shopping_basket_outlined, title: 'Shop your favourites', subtitle: 'Sample earn rate: 1 point per ₹10 spent', onTap: () => goTab(context, R.collection)),
-        ActionRow(icon: Icons.person_add_alt_outlined, title: 'Invite a friend', subtitle: 'Earn after their first eligible delivered order', onTap: () => _shareReferral(context)),
-        ActionRow(icon: Icons.local_offer_outlined, title: 'Redeem at checkout', subtitle: 'Choose points, see savings, pay the rest', onTap: () => go(context, R.bag)),
-        const Gap(12),
-        const Note('100 points = ₹10 · No cash withdrawal. Final eligibility and expiry rules will be set before launch.'),
+        ActionRow(icon: Icons.favorite_border_rounded, title: 'Your favourites', subtitle: 'Saved sweets, shared with the website', onTap: () => go(context, R.favourites)),
+        ActionRow(icon: Icons.receipt_long_outlined, title: 'Your orders', subtitle: 'Track and reorder', onTap: () => go(context, R.orderHistory), divider: false),
       ],
     );
   }
 }
 
-void _shareReferral(BuildContext context) {
-  Clipboard.setData(const ClipboardData(text: 'Join me on Uttaranchal Dairy & Sweets! Use code AARAV200 for sweet rewards.'));
-  toast(context, 'Invite message copied — share it on WhatsApp');
-}
-
-// ───────────────────────── 30 · Points activity & rules ─────────────────────────
-class PointsActivityScreen extends StatefulWidget {
+class PointsActivityScreen extends StatelessWidget {
   const PointsActivityScreen({super.key});
 
   @override
-  State<PointsActivityScreen> createState() => _PointsActivityScreenState();
+  Widget build(BuildContext context) => const RewardsScreen();
 }
 
-class _PointsActivityScreenState extends State<PointsActivityScreen> {
-  int _tab = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.app;
-    return UScaffold(
-      title: 'Every sweet reward',
-      nav: NavKind.customer,
-      navIndex: 3,
-      bottom: PrimaryButton('Find your next favourite', onTap: () => goTab(context, R.collection)),
-      children: [
-        UnderlineTabs(tabs: const ['Activity', 'How it works'], index: _tab, onChanged: (i) => setState(() => _tab = i)),
-        const Gap(16),
-        ColorBlock(
-          color: AppColors.purple,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Available points', style: T.sans(12, color: AppColors.white)),
-            const Gap(10),
-            Text(grouped(app.points), style: T.display(42, color: AppColors.white)),
-            Text('Pending: 65 points · Order #UDS1048', style: T.sans(11.5, color: AppColors.white)),
-          ]),
-        ),
-        const Gap(12),
-        if (_tab == 0) ...[
-          for (final a in app.pointsActivity)
-            KV('${a.$1} · ${a.$2}', a.$3 > 0 ? '+ ${a.$3} pts' : '− ${-a.$3} pts', color: a.$3 > 0 ? AppColors.teal : AppColors.ink),
-          const Gap(12),
-          UCard(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('A few sweet details.', style: T.display(25)),
-              const Gap(10),
-              for (final t in const [
-                'Earn after successful delivery.',
-                'Use points toward eligible product purchases.',
-                'Review the discount before paying.',
-                'Refunds reverse applicable earned points.',
-              ])
-                Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('•  $t', style: T.sans(12))),
-            ]),
-          ),
-        ] else ...[
-          for (final s in const [
-            (Icons.shopping_bag_outlined, 'Shop', 'Earn 1 point for every ₹10 on sweets, snacks and gift boxes.'),
-            (Icons.local_shipping_outlined, 'Receive', 'Points are credited once your order is delivered.'),
-            (Icons.local_offer_outlined, 'Redeem', 'Use points at checkout — 100 points = ₹10 off eligible products.'),
-            (Icons.person_add_alt_outlined, 'Refer', 'Get 200 points when a friend completes their first order.'),
-          ])
-            ActionRow(icon: s.$1, title: s.$2, subtitle: s.$3, iconBg: AppColors.pink),
-        ],
-        const FinePrint('Illustrative programme. Point validity, earning exclusions, referral conditions and redemption limits are configurable.'),
-      ],
-    );
-  }
-}
-
-// ───────────────────────── 31 · Account & referrals ─────────────────────────
+// ───────────────────────── 31 · Account ─────────────────────────
 class AccountScreen extends StatelessWidget {
   const AccountScreen({super.key});
 
@@ -153,122 +76,276 @@ class AccountScreen extends StatelessWidget {
       title: 'Your little corner',
       nav: NavKind.customer,
       navIndex: 4,
-      trailing: IconTileButton(Icons.notifications_none_rounded, dot: true, onTap: () => go(context, R.notifications)),
+      trailing: IconTileButton(Icons.notifications_none_rounded, onTap: () => go(context, R.notifications)),
       children: [
-        Row(children: [
-          Avatar(app.initials, size: 50),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Namaste, ${app.firstName}.', style: T.display(27)),
-              Text('+91 ${app.phone}', style: T.sans(12, color: AppColors.muted)),
-            ]),
-          ),
-          GestureDetector(
-            onTap: () => _editName(context),
-            child: const Pill('Edit', bg: AppColors.peach, fg: AppColors.ink),
-          ),
-        ]),
-        const Gap(14),
-        ColorBlock(
-          color: AppColors.purple,
-          onTap: () => goTab(context, R.rewards),
-          child: Row(children: [
+        if (app.signedIn)
+          Row(children: [
+            Avatar(app.initials, size: 50),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('YOUR  SWEET  REWARDS', style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w700, spacing: 1.2)),
-                const Gap(8),
-                Text('${grouped(app.points)} points', style: T.display(26, color: AppColors.white)),
+                Text('Namaste, ${app.firstName}.', style: T.display(27), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('+91 ${app.phoneDisplay}${app.email.isNotEmpty ? ' · ${app.email}' : ''}', style: T.sans(12, color: AppColors.muted), maxLines: 1, overflow: TextOverflow.ellipsis),
               ]),
             ),
-            const IconTileButton(Icons.north_east_rounded),
-          ]),
-        ),
-        const Gap(4),
+            GestureDetector(onTap: () => _editProfile(context), child: const Pill('Edit', bg: AppColors.peach, fg: AppColors.ink)),
+          ])
+        else
+          ColorBlock(
+            color: AppColors.yellow,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Sign in for the full experience.', style: T.display(24)),
+              const Gap(6),
+              Text('See every order (app & website), keep favourites in sync and check out faster.', style: T.sans(12, height: 1.5)),
+              const Gap(12),
+              Row(children: [
+                SmallButton('Sign in', onTap: () => go(context, R.signIn)),
+                const SizedBox(width: 8),
+                SmallButton('Create account', filled: false, onTap: () => go(context, R.verify)),
+              ]),
+            ]),
+          ),
+        const Gap(8),
         ActionRow(icon: Icons.receipt_long_outlined, title: 'My orders', subtitle: 'Track, reorder and view receipts', onTap: () => go(context, R.orderHistory)),
-        ActionRow(icon: Icons.local_drink_outlined, title: 'My milk plan', subtitle: 'Your everyday delivery routine', onTap: () => go(context, R.milkActive)),
-        ActionRow(icon: Icons.location_on_outlined, title: 'Saved addresses', subtitle: 'Home, work and gifting addresses', onTap: () => go(context, R.location, args: 'edit')),
+        ActionRow(icon: Icons.favorite_border_rounded, title: 'Favourites', subtitle: '${app.favourites.length} saved', onTap: () => go(context, R.favourites)),
+        ActionRow(icon: Icons.location_on_outlined, title: 'Delivery address', subtitle: app.hasAddress ? '${app.fullAddress} · ${app.pincode}' : 'Add your address', onTap: () => go(context, R.location, args: 'edit')),
+        ActionRow(icon: Icons.local_drink_outlined, title: 'Milk subscription', subtitle: 'Coming soon', onTap: () => goTab(context, R.milkHub)),
         ActionRow(icon: Icons.landscape_outlined, title: 'Our story & visit us', subtitle: '27 years of sweet beginnings', onTap: () => go(context, R.story)),
-        ActionRow(icon: Icons.help_outline_rounded, title: 'Help & preferences', subtitle: 'Support, notifications & language', onTap: () => go(context, R.help)),
-        const Gap(12),
-        ColorBlock(
-          color: AppColors.yellow,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Share a little sweetness.', style: T.display(25)),
-            const Gap(8),
-            Text.rich(TextSpan(style: T.sans(12), children: [
-              const TextSpan(text: 'Your referral code: '),
-              TextSpan(text: 'AARAV200', style: T.sans(12, weight: FontWeight.w700)),
-            ])),
-            const Gap(12),
-            Material(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () {
-                  Clipboard.setData(const ClipboardData(text: 'AARAV200'));
-                  toast(context, 'Referral code copied');
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                  child: Text('Copy referral code ↗', style: T.sans(11.5, weight: FontWeight.w500)),
-                ),
-              ),
-            ),
-          ]),
-        ),
+        ActionRow(icon: Icons.help_outline_rounded, title: 'Help & preferences', subtitle: 'Message the shop, language & notifications', onTap: () => go(context, R.help)),
+        ActionRow(icon: Icons.policy_outlined, title: 'FAQ & policies', subtitle: 'Delivery, returns, privacy and terms', onTap: () => go(context, R.info, args: 'faq')),
+        if (app.signedIn) ...[
+          ActionRow(icon: Icons.lock_outline_rounded, title: 'Change password', subtitle: 'Also changes it for the website', onTap: () => _changePassword(context)),
+          ActionRow(
+            icon: Icons.logout_rounded,
+            title: 'Sign out',
+            subtitle: 'You can sign back in any time',
+            onTap: () async {
+              final ok = await confirmDialog(context, title: 'Sign out?', message: 'Your bag stays on this phone.', confirm: 'Sign out');
+              if (!ok || !context.mounted) return;
+              await context.appRead.logout();
+              if (context.mounted) Navigator.of(context).pushNamedAndRemoveUntil(R.welcome, (_) => false);
+            },
+          ),
+          ActionRow(icon: Icons.delete_outline_rounded, title: 'Delete my account', subtitle: 'Permanently remove your account', onTap: () => _deleteAccount(context)),
+        ],
         const Gap(18),
-        Text('PROTOTYPE', style: T.eyebrow(AppColors.muted)),
+        Text('SHOP STAFF', style: T.eyebrow(AppColors.muted)),
         ActionRow(
-          icon: Icons.delivery_dining_outlined,
-          title: 'Switch to delivery staff app',
-          subtitle: 'Milk distribution partner experience',
+          icon: Icons.storefront_rounded,
+          title: 'Staff app',
+          subtitle: 'Live shop orders & stock (staff sign-in)',
           iconBg: AppColors.mint,
           iconColor: AppColors.teal,
-          onTap: () => go(context, R.staffSignIn),
-        ),
-        ActionRow(
-          icon: Icons.grid_view_rounded,
-          title: 'Screen index',
-          subtitle: 'Jump to any of the 42 designed screens',
-          iconBg: AppColors.mint,
-          iconColor: AppColors.teal,
-          onTap: () => go(context, R.screenIndex),
-        ),
-        ActionRow(
-          icon: Icons.logout_rounded,
-          title: 'Sign out',
-          subtitle: 'Return to the welcome screen',
           divider: false,
-          onTap: () async {
-            final ok = await confirmDialog(context, title: 'Sign out?', message: 'You can sign back in any time with your mobile number.', confirm: 'Sign out');
-            if (ok && context.mounted) Navigator.of(context).pushNamedAndRemoveUntil(R.welcome, (_) => false);
-          },
+          onTap: () => go(context, app.staffSignedIn ? R.staffOrders : R.staffSignIn),
         ),
       ],
     );
   }
 
-  Future<void> _editName(BuildContext context) async {
-    final c = TextEditingController(text: context.appRead.userName);
-    final name = await showModalBottomSheet<String>(
+  Future<void> _editProfile(BuildContext context) async {
+    final app = context.appRead;
+    final name = TextEditingController(text: app.userName);
+    final email = TextEditingController(text: app.email);
+    final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.viewInsetsOf(ctx).bottom + 24),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Edit profile', style: T.display(28)),
-          UField(label: 'Full name', controller: c, autofocus: true),
+          UField(label: 'Full name', controller: name),
+          UField(label: 'Email', controller: email, keyboard: TextInputType.emailAddress),
           const Gap(18),
-          PrimaryButton('Save', icon: null, onTap: () => Navigator.pop(ctx, c.text.trim())),
+          PrimaryButton('Save', icon: null, onTap: () => Navigator.pop(ctx, true)),
         ]),
       ),
     );
-    if (name != null && name.isNotEmpty && context.mounted) {
-      context.appRead.setName(name);
-      toast(context, 'Profile updated');
+    if (ok != true || !context.mounted) return;
+    try {
+      await context.appRead.updateProfile(name: name.text.trim(), email: email.text.trim());
+      if (context.mounted) toast(context, 'Profile updated');
+    } on ApiException catch (e) {
+      if (context.mounted) toast(context, e.message);
     }
+  }
+
+  Future<void> _changePassword(BuildContext context) async {
+    final current = TextEditingController();
+    final next = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.viewInsetsOf(ctx).bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Change password', style: T.display(28)),
+          UField(label: 'Current password', controller: current, obscure: true),
+          UField(label: 'New password (at least 8 characters)', controller: next, obscure: true),
+          const Gap(18),
+          PrimaryButton('Change password', icon: null, onTap: () => Navigator.pop(ctx, true)),
+        ]),
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await context.appRead.changePassword(current.text, next.text);
+      if (context.mounted) toast(context, 'Password changed. Other devices have been signed out.');
+    } on ApiException catch (e) {
+      if (context.mounted) toast(context, e.message);
+    }
+  }
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    final pw = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.viewInsetsOf(ctx).bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Delete your account?', style: T.display(28)),
+          const Gap(8),
+          Text('This removes your account and favourites from the app and the website. Past orders are kept by the shop for its records. This can’t be undone.', style: T.body()),
+          UField(label: 'Enter your password to confirm', controller: pw, obscure: true),
+          const Gap(18),
+          PrimaryButton('Delete my account', icon: null, onTap: () => Navigator.pop(ctx, true)),
+        ]),
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await context.appRead.deleteAccount(pw.text);
+      if (!context.mounted) return;
+      toast(context, 'Your account has been deleted');
+      Navigator.of(context).pushNamedAndRemoveUntil(R.welcome, (_) => false);
+    } on ApiException catch (e) {
+      if (context.mounted) toast(context, e.message);
+    }
+  }
+}
+
+// ───────────────────────── Favourites ─────────────────────────
+class FavouritesScreen extends StatefulWidget {
+  const FavouritesScreen({super.key});
+
+  @override
+  State<FavouritesScreen> createState() => _FavouritesScreenState();
+}
+
+class _FavouritesScreenState extends State<FavouritesScreen> {
+  List<Product>? _items;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await context.appRead.fetchWishlist();
+      if (mounted) setState(() => _items = list);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final favs = context.app.favourites;
+    final shown = (_items ?? const <Product>[]).where((p) => favs.contains(p.id)).toList();
+    return UScaffold(
+      title: 'Your favourites',
+      nav: NavKind.customer,
+      navIndex: 4,
+      children: [
+        const Eyebrow('Saved for later'),
+        const Gap(10),
+        const Headline('The ones you\n*love most.*'),
+        const Gap(16),
+        if (_error != null)
+          LoadState(error: _error, onRetry: _load)
+        else if (_items == null)
+          const LoadState(loading: true)
+        else if (shown.isEmpty)
+          const LoadState(empty: 'Tap the heart on any sweet to save it here.')
+        else
+          ProductGrid(shown),
+        if (!context.app.signedIn) const Note('Sign in to keep your favourites in sync with the website.'),
+      ],
+    );
+  }
+}
+
+// ───────────────────────── FAQ & policies ─────────────────────────
+class InfoPageScreen extends StatefulWidget {
+  final String page;
+  const InfoPageScreen({super.key, this.page = 'faq'});
+
+  @override
+  State<InfoPageScreen> createState() => _InfoPageScreenState();
+}
+
+class _InfoPageScreenState extends State<InfoPageScreen> {
+  static const _pages = {'faq': 'FAQ', 'shipping': 'Delivery', 'returns': 'Returns', 'privacy': 'Privacy', 'terms': 'Terms'};
+  late String _page = _pages.containsKey(widget.page) ? widget.page : 'faq';
+  List<(String, String)>? _items;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _items = null;
+      _error = null;
+    });
+    try {
+      final items = await context.appRead.fetchPage(_page);
+      if (mounted) setState(() => _items = items);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return UScaffold(
+      title: 'A little help, with love',
+      nav: NavKind.customer,
+      navIndex: 4,
+      children: [
+        ChipGroup(
+          options: _pages.values.toList(),
+          selected: _pages[_page]!,
+          scroll: true,
+          onSelected: (v) {
+            _page = _pages.entries.firstWhere((e) => e.value == v).key;
+            _load();
+          },
+        ),
+        const Gap(16),
+        if (_error != null)
+          LoadState(error: _error, onRetry: _load)
+        else if (_items == null)
+          const LoadState(loading: true)
+        else
+          for (final (title, body) in _items!)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: T.title()),
+                const Gap(4),
+                Text(body, style: T.body()),
+              ]),
+            ),
+      ],
+    );
   }
 }
 
@@ -278,11 +355,12 @@ class StoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cfg = context.app.config;
     return UScaffold(
       title: 'Rooted in Devbhoomi',
       nav: NavKind.customer,
       navIndex: 4,
-      bottom: OutlineBtn('Ask us about your visit', onTap: () => go(context, R.help, args: 'visit')),
+      bottom: OutlineBtn('Send the shop a message', onTap: () => go(context, R.help, args: 'visit')),
       children: [
         ClipRRect(borderRadius: BorderRadius.circular(16), child: AspectRatio(aspectRatio: 2.4, child: Image.asset(Img.devbhoomi, fit: BoxFit.cover))),
         const Gap(14),
@@ -300,87 +378,73 @@ class StoryScreen extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Come say namaste.', style: T.display(25, color: AppColors.white)),
             const Gap(10),
-            Text('Patel Nagar, Kashipur\nUdham Singh Nagar, Uttarakhand', style: T.sans(11.5, color: AppColors.white, height: 1.6)),
-            const Gap(8),
-            Text('Temples, hills and the wild heart of Corbett.\nOur home. Our inspiration.', style: T.sans(11.5, color: AppColors.white, height: 1.6)),
+            Text(cfg.shopAddress, style: T.sans(11.5, color: AppColors.white, height: 1.6)),
+            if (cfg.shopHours != null && cfg.shopHours!.isNotEmpty) ...[const Gap(4), Text(cfg.shopHours!, style: T.sans(11.5, color: AppColors.white, height: 1.6))],
             const Gap(12),
             Row(children: [
-              SmallButton('Directions', color: AppColors.berry, icon: Icons.near_me_outlined, onTap: () => toast(context, 'Opening maps… (demo)')),
+              if (cfg.mapsUrl != null) SmallButton('Directions', color: AppColors.berry, icon: Icons.near_me_outlined, onTap: () => openLink(context, cfg.mapsUrl!)),
               const SizedBox(width: 8),
-              SmallButton('Call shop', color: AppColors.tealDark, icon: Icons.call_outlined, onTap: () => toast(context, 'Calling the shop… (demo)')),
+              if (cfg.shopPhone != null && cfg.shopPhone!.isNotEmpty)
+                SmallButton('Call shop', color: AppColors.tealDark, icon: Icons.call_outlined, onTap: () => openLink(context, 'tel:${cfg.shopPhone!.replaceAll(' ', '')}')),
             ]),
           ]),
         ),
-        const FinePrint('Owner story wording and quotation are design copy for review.'),
       ],
     );
   }
 }
 
 // ───────────────────────── 33 · Notifications ─────────────────────────
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => context.appRead.loadMyOrders().catchError((_) {}));
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = context.app;
+    final recent = app.myOrders.take(5).toList();
     return UScaffold(
       title: 'A little heads-up',
       nav: NavKind.customer,
       navIndex: 0,
       children: [
-        const Eyebrow('Just for you'),
+        const Eyebrow('Order updates'),
         const Gap(10),
         const Headline('Fresh updates.\n*Sweet reminders.*'),
         const Gap(16),
-        ColorBlock(
-          color: AppColors.teal,
-          onTap: () => go(context, R.milkProof),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('MILK  DELIVERY  ·  6:32 AM', style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w700, spacing: 1.2)),
-            const Gap(8),
-            Text('Your morning is here.', style: T.display(25, color: AppColors.white)),
-            const Gap(6),
-            Text('${app.milkLitres} L milk delivered. ${rupees(app.perDelivery)} charged to your milk balance.', style: T.sans(11.5, color: AppColors.white)),
-            const Gap(8),
-            Text('View delivery →', style: T.sans(11.5, color: AppColors.white, weight: FontWeight.w600)),
-          ]),
-        ),
-        const Gap(10),
-        UCard(
-          onTap: () => go(context, R.tracking),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('ORDER  #UDS1048  ·  10:45 AM', style: T.sans(9.5, weight: FontWeight.w700, spacing: 1.2)),
-            const Gap(8),
-            Text('A sweet parcel is on its way.', style: T.display(25)),
-            const Gap(6),
-            Text('Your order is out for delivery.', style: T.sans(11.5)),
-            const Gap(8),
-            Text('Track order →', style: T.sans(11.5, color: AppColors.teal, weight: FontWeight.w600)),
-          ]),
-        ),
-        const Gap(10),
-        ColorBlock(
-          color: AppColors.yellow,
-          onTap: () => goTab(context, R.rewards),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('REWARDS', style: T.sans(9.5, weight: FontWeight.w700, spacing: 1.2)),
-            const Gap(8),
-            Text('You earned 89 points.', style: T.display(25)),
-            const Gap(6),
-            Text('Thank you for making us part of your celebration.', style: T.sans(11.5)),
-            const Gap(8),
-            Text('View rewards →', style: T.sans(11.5, weight: FontWeight.w600)),
-          ]),
-        ),
-        const Gap(6),
-        ActionRow(icon: Icons.tune_rounded, title: 'Notification preferences', subtitle: 'Choose the updates you receive', onTap: () => go(context, R.help), divider: false),
+        if (app.loadingOrders && recent.isEmpty) const LoadState(loading: true),
+        if (!app.loadingOrders && recent.isEmpty) const LoadState(empty: 'No updates yet. Your order updates will appear here.'),
+        for (final o in recent) ...[
+          UCard(
+            onTap: () => go(context, R.tracking, args: o.number),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('ORDER  #${o.number}', style: T.sans(9.5, weight: FontWeight.w700, spacing: 1.2)),
+              const Gap(8),
+              Text(o.needsPayment ? 'Payment pending' : o.statusLabel, style: T.display(24)),
+              const Gap(6),
+              Text('${money(o.total)} · updated ${o.updatedAt == null ? '' : dayMonth(o.updatedAt!)}', style: T.sans(11.5)),
+            ]),
+          ),
+          const Gap(10),
+        ],
+        const Note('We also email every order update to the address on your order.'),
       ],
     );
   }
 }
 
-// ───────────────────────── 34 · Help & language preferences ─────────────────────────
+// ───────────────────────── 34 · Help & preferences ─────────────────────────
+/// Sends the website's contact form (lands in Admin → Messages).
 class HelpScreen extends StatefulWidget {
   final String? reference;
   const HelpScreen({super.key, this.reference});
@@ -390,26 +454,52 @@ class HelpScreen extends StatefulWidget {
 }
 
 class _HelpScreenState extends State<HelpScreen> {
-  late String _topic = switch (widget.reference) {
-    'milk' => 'Milk delivery / missing quantity',
-    'visit' => 'Shop visit & opening hours',
-    null => 'Milk delivery / missing quantity',
-    _ => 'Sweet order / delivery',
-  };
+  late String _topic = (widget.reference ?? '').startsWith('UDS') ? 'Existing order support' : 'Product enquiry';
+  late final _name = TextEditingController(text: context.appRead.signedIn || context.appRead.guestName.isNotEmpty ? context.appRead.userName : '');
+  late final _email = TextEditingController(text: context.appRead.email);
+  late final _ref = TextEditingController(text: (widget.reference ?? '').startsWith('UDS') ? widget.reference : '');
+  final _message = TextEditingController();
+  bool _busy = false;
 
-  static const _topics = [
-    'Milk delivery / missing quantity',
-    'Sweet order / delivery',
-    'Payments & refunds',
-    'Loyalty points',
-    'Shop visit & opening hours',
-    'Something else',
-  ];
+  @override
+  void dispose() {
+    for (final c in [_name, _email, _ref, _message]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    if (_message.text.trim().isEmpty) {
+      toast(context, 'Please tell us how we can help');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final app = context.appRead;
+      final msg = await app.sendEnquiry('contact', {
+        'name': _name.text.trim(),
+        'email': _email.text.trim(),
+        if (app.phone.length == 10) 'phone': app.phone,
+        'topic': _topic,
+        'message': _message.text.trim(),
+        if (_ref.text.trim().isNotEmpty) 'order_number': _ref.text.trim(),
+      });
+      if (!mounted) return;
+      _message.clear();
+      await showSuccess(context, title: 'We’re on it', message: msg, cta: 'Thank you');
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = context.app;
-    final ref = widget.reference != null && widget.reference!.startsWith('UDS') ? widget.reference! : 'UDS1048';
+    final topics = app.config.contactTopics;
+    if (!topics.contains(_topic) && topics.isNotEmpty) _topic = topics.first;
     return UScaffold(
       title: 'Here for you',
       nav: NavKind.customer,
@@ -423,25 +513,27 @@ class _HelpScreenState extends State<HelpScreen> {
           label: 'What can we help with?',
           value: _topic,
           onTap: () async {
-            final v = await pickOption(context, title: 'What can we help with?', options: _topics, selected: _topic);
+            final v = await pickOption(context, title: 'What can we help with?', options: topics, selected: _topic);
             if (v != null) setState(() => _topic = v);
           },
         ),
-        UField(label: 'Order / delivery reference', initial: ref),
-        const UField(label: 'Your message', hint: 'Tell us what happened…', maxLines: 3),
+        UField(label: 'Your name', controller: _name),
+        UField(label: 'Email (we reply here)', controller: _email, keyboard: TextInputType.emailAddress),
+        UField(label: 'Order number (optional)', controller: _ref, hint: 'UDS-…'),
+        UField(label: 'Your message', controller: _message, hint: 'Tell us what happened…', maxLines: 4),
         const Gap(16),
         Align(
           alignment: Alignment.centerLeft,
-          child: OutlineBtn(
-            'Prepare support request',
-            expanded: false,
-            icon: Icons.north_east_rounded,
-            onTap: () => showSuccess(context,
-                title: 'We’re on it',
-                message: 'Request #SR-2207 is with our team. Expect a call or WhatsApp message within 2 hours (9 AM–8 PM).',
-                cta: 'Thank you'),
-          ),
+          child: OutlineBtn(_busy ? 'Sending…' : 'Send to the shop', expanded: false, icon: Icons.north_east_rounded, onTap: _busy ? null : _send),
         ),
+        if (app.config.shopPhone != null && app.config.shopPhone!.isNotEmpty) ...[
+          const Gap(10),
+          TextButton.icon(
+            onPressed: () => openLink(context, 'tel:${app.config.shopPhone!.replaceAll(' ', '')}'),
+            icon: const Icon(Icons.call_outlined, size: 16, color: AppColors.teal),
+            label: Text('Or call ${app.config.shopPhone}', style: T.sans(12, color: AppColors.teal, weight: FontWeight.w600)),
+          ),
+        ],
         const Gap(16),
         const Divider(color: AppColors.border),
         UPicker(
@@ -452,14 +544,19 @@ class _HelpScreenState extends State<HelpScreen> {
             final v = await pickOption(context, title: 'App language', options: const ['English', 'हिन्दी'], selected: app.language);
             if (v != null && context.mounted) {
               context.appRead.setLanguage(v);
-              if (v != 'English') toast(context, 'Hindi screens will be available at launch — preview shows English');
+              if (v != 'English') toast(context, 'Full Hindi screens are coming soon');
             }
           },
         ),
         const Gap(12),
-        ToggleCard(title: 'Order & milk notifications', value: app.notifications, onChanged: context.appRead.toggleNotifications, card: false),
-        const FinePrint('English screen designs shown. Hindi content and local support contact details will be configured before launch.'),
+        ToggleCard(title: 'Order notifications', value: app.notifications, onChanged: context.appRead.toggleNotifications, card: false),
       ],
     );
   }
+}
+
+// Kept so older code that copied the referral text still compiles.
+void copyText(BuildContext context, String text, String done) {
+  Clipboard.setData(ClipboardData(text: text));
+  toast(context, done);
 }

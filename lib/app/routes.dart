@@ -49,6 +49,8 @@ class R {
   static const story = '/story'; // 32
   static const notifications = '/notifications'; // 33
   static const help = '/help'; // 34
+  static const favourites = '/favourites';
+  static const info = '/info'; // FAQ & policies (arg: faq|shipping|returns|privacy|terms)
 
   // Staff app
   static const staffSignIn = '/staff'; // 35
@@ -59,10 +61,13 @@ class R {
   static const staffException = '/staff/exception'; // 40
   static const staffStock = '/staff/stock'; // 41
   static const staffSummary = '/staff/summary'; // 42
+  static const staffOrders = '/staff/orders'; // live shop orders (website + app)
+  static const staffOrder = '/staff/order'; // arg: order id
+  static const staffProducts = '/staff/products'; // stock
 
   // Presenter tools
   static const screenIndex = '/demo/screens';
 
   static const customerTabs = [home, collection, milkHub, rewards, account];
-  static const staffTabs = [staffDashboard, staffRoute, staffStock, staffSummary];
+  static const staffTabs = [staffOrders, staffProducts, staffDashboard];
 }

@@ -47,6 +47,7 @@ class UField extends StatefulWidget {
   final bool autofocus;
   final TextInputAction? action;
   final ValueChanged<String>? onSubmitted;
+  final bool obscure;
 
   const UField({
     super.key,
@@ -63,6 +64,7 @@ class UField extends StatefulWidget {
     this.autofocus = false,
     this.action,
     this.onSubmitted,
+    this.obscure = false,
   });
 
   @override
@@ -90,6 +92,9 @@ class _UFieldState extends State<UField> {
       autofocus: widget.autofocus,
       textInputAction: widget.action,
       onSubmitted: widget.onSubmitted,
+      obscureText: widget.obscure,
+      autocorrect: !widget.obscure,
+      enableSuggestions: !widget.obscure,
       onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
       style: T.sans(13, color: AppColors.ink),
       decoration: _decoration(

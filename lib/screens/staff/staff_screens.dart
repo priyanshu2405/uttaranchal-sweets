@@ -12,47 +12,7 @@ import '../../widgets/fields.dart';
 import '../../widgets/illustrations.dart';
 import '../../widgets/u_scaffold.dart';
 
-const _staffSubtitle = 'Uttaranchal Dairy · Staff';
-
-// ───────────────────────── 35 · Delivery staff sign in ─────────────────────────
-class StaffSignInScreen extends StatelessWidget {
-  const StaffSignInScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return UScaffold(
-      title: 'Milk distribution',
-      trailing: const HelpButton(),
-      bottom: PrimaryButton(
-        'Open my morning route',
-        color: AppColors.teal,
-        onTap: () async {
-          await showProcessing(context, 'Loading today’s route…', duration: const Duration(milliseconds: 900));
-          if (context.mounted) goTab(context, R.staffDashboard);
-        },
-      ),
-      children: [
-        const Eyebrow('Delivery partner app'),
-        const Gap(10),
-        const Headline('Good mornings,\n*delivered.*'),
-        const Gap(16),
-        const MilkHero(),
-        const Gap(10),
-        ColorBlock(
-          color: AppColors.teal,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Uttaranchal dairy team', style: T.display(25, color: AppColors.white)),
-            const Gap(8),
-            Text('Your route, customer quantities and delivery records—in one place.', style: T.sans(11.5, color: AppColors.white)),
-          ]),
-        ),
-        const UField(label: 'Staff mobile number', initial: '98970 12345', prefixText: '+91', keyboard: TextInputType.phone),
-        const UField(label: 'Verification code', initial: '2468', keyboard: TextInputType.number),
-        const FinePrint('Staff access is assigned by the dairy team. This preview uses sample delivery data.'),
-      ],
-    );
-  }
-}
+const _staffSubtitle = 'Milk route · sample data';
 
 // ───────────────────────── 36 · Distribution dashboard ─────────────────────────
 class StaffDashboardScreen extends StatelessWidget {
@@ -65,11 +25,11 @@ class StaffDashboardScreen extends StatelessWidget {
     final done = app.completedStops;
     final next = app.nextStop;
     return UScaffold(
-      title: 'Namaste, Ravi.',
+      title: 'Milk route',
       subtitle: _staffSubtitle,
       nav: NavKind.staff,
-      navIndex: 0,
-      trailing: IconTileButton(Icons.logout_rounded, onTap: () => _exit(context)),
+      navIndex: 2,
+      trailing: IconTileButton(Icons.storefront_rounded, onTap: () => _exit(context)),
       bottom: PrimaryButton(
         next == null ? 'Close today’s shift' : 'Continue my route',
         color: AppColors.teal,
@@ -82,7 +42,9 @@ class StaffDashboardScreen extends StatelessWidget {
         },
       ),
       children: [
-        const Eyebrow('Morning shift · 7 November'),
+        const Note('Milk delivery routes are coming soon. This screen shows sample data so you can see how it will work.'),
+        const Gap(12),
+        const Eyebrow('Morning shift · sample'),
         const Gap(10),
         const Headline('A fresh route.\nA *good morning.*'),
         const Gap(16),
@@ -124,10 +86,7 @@ class StaffDashboardScreen extends StatelessWidget {
   }
 }
 
-Future<void> _exit(BuildContext context) async {
-  final ok = await confirmDialog(context, title: 'Leave staff app?', message: 'Return to the customer welcome screen. Route progress is kept for this demo.', confirm: 'Leave', color: AppColors.teal);
-  if (ok && context.mounted) Navigator.of(context).pushNamedAndRemoveUntil(R.welcome, (_) => false);
-}
+Future<void> _exit(BuildContext context) async => goTab(context, R.staffOrders);
 
 // ───────────────────────── 37 · Route & delivery stops ─────────────────────────
 class StaffRouteScreen extends StatefulWidget {
@@ -153,7 +112,7 @@ class _StaffRouteScreenState extends State<StaffRouteScreen> {
       title: 'Today’s route',
       subtitle: _staffSubtitle,
       nav: NavKind.staff,
-      navIndex: 1,
+      navIndex: 2,
       trailing: null,
       bottom: PrimaryButton(
         next == null ? 'View shift summary' : 'Open next delivery',
@@ -249,7 +208,7 @@ class StaffStopScreen extends StatelessWidget {
       title: 'Stop ${s.number} of ${app.route.length}',
       subtitle: _staffSubtitle,
       nav: NavKind.staff,
-      navIndex: 0,
+      navIndex: 2,
       trailing: IconTileButton(Icons.call_outlined, onTap: () => toast(context, 'Calling ${s.name}… (demo)')),
       bottom: done
           ? OutlineBtn('Back to route', color: AppColors.teal, onTap: () => Navigator.maybePop(context))
@@ -325,7 +284,7 @@ class _StaffConfirmScreenState extends State<StaffConfirmScreen> {
       title: 'Freshness delivered',
       subtitle: _staffSubtitle,
       nav: NavKind.staff,
-      navIndex: 0,
+      navIndex: 2,
       trailing: null,
       bottom: PrimaryButton(
         'Confirm delivery · ${rupees(charge)}',
@@ -413,7 +372,7 @@ class _StaffExceptionScreenState extends State<StaffExceptionScreen> {
       title: 'A little change of plan',
       subtitle: _staffSubtitle,
       nav: NavKind.staff,
-      navIndex: 0,
+      navIndex: 2,
       trailing: null,
       bottom: PrimaryButton(
         'Save exception & continue',
@@ -554,7 +513,7 @@ class StaffSummaryScreen extends StatelessWidget {
       title: 'A morning well delivered',
       subtitle: _staffSubtitle,
       nav: NavKind.staff,
-      navIndex: 3,
+      navIndex: 2,
       trailing: null,
       bottom: PrimaryButton(
         'Submit shift preview',
@@ -563,7 +522,7 @@ class StaffSummaryScreen extends StatelessWidget {
           await showProcessing(context, 'Submitting shift…', duration: const Duration(milliseconds: 900));
           if (!context.mounted) return;
           await showSuccess(context, title: 'Shift submitted', message: 'The dairy team will reconcile your record. Thank you for a lovely morning, Ravi.', cta: 'Finish');
-          if (context.mounted) Navigator.of(context).pushNamedAndRemoveUntil(R.welcome, (_) => false);
+          if (context.mounted) goTab(context, R.staffOrders);
         },
       ),
       children: [

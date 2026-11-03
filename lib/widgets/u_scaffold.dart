@@ -219,10 +219,9 @@ class StaffNav extends StatelessWidget {
   const StaffNav({super.key, required this.index});
 
   static const _items = [
-    _NavItem(Icons.alt_route_outlined, Icons.alt_route_rounded, 'Route', R.staffDashboard),
-    _NavItem(Icons.format_list_numbered_rounded, Icons.format_list_numbered_rounded, 'Stops', R.staffRoute),
-    _NavItem(Icons.inventory_2_outlined, Icons.inventory_2_rounded, 'Stock', R.staffStock),
-    _NavItem(Icons.summarize_outlined, Icons.summarize_rounded, 'Summary', R.staffSummary),
+    _NavItem(Icons.receipt_long_outlined, Icons.receipt_long_rounded, 'Orders', R.staffOrders),
+    _NavItem(Icons.inventory_2_outlined, Icons.inventory_2_rounded, 'Stock', R.staffProducts),
+    _NavItem(Icons.alt_route_outlined, Icons.alt_route_rounded, 'Milk route', R.staffDashboard),
   ];
 
   @override
