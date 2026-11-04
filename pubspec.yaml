@@ -1,7 +1,7 @@
 name: uttaranchal_app
 description: "Uttaranchal Dairy & Sweets — customer app + shop staff app, connected to the website (Laravel API)."
 publish_to: 'none'
-version: 1.2.0+3
+version: 1.2.1+4
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

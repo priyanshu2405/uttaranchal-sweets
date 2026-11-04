@@ -885,8 +885,17 @@ class AppState extends ChangeNotifier {
   static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
   static String _ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  /// Re-reads price and rules from the server (the shop can change the price in the admin panel).
+  Future<void> refreshMilkConfig() async {
+    try {
+      milkConfig = MilkConfig.fromJson(await api.get('/milk/config'));
+      notifyListeners();
+    } on ApiException catch (_) {}
+  }
+
   /// Start building a new plan, or editing the current one.
   void startMilkDraft({bool edit = false}) {
+    if (signedIn) unawaited(refreshMilkConfig());
     final p = milkPlan;
     milkEditing = edit && p != null;
     milkWeekdays.clear();
