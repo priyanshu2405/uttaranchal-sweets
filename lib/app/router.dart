@@ -49,6 +49,7 @@ class AppRouter {
       R.milkPause => const MilkPauseScreen(),
       R.milkProof => const MilkProofScreen(),
       R.milkTopUp => const MilkTopUpScreen(),
+      R.milkPayment => const MilkPaymentScreen(),
       R.rewards => const RewardsScreen(),
       R.pointsActivity => const PointsActivityScreen(),
       R.account => const AccountScreen(),

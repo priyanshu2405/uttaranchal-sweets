@@ -163,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
           subtitle: active != null ? 'Track #${active.number} · ${active.statusLabel}' : 'Orders from the app and the website',
           onTap: () => go(context, R.orderHistory),
         ),
-        ActionRow(icon: Icons.local_drink_outlined, title: 'Fresh milk at your door', subtitle: 'Daily milk subscriptions · coming soon', onTap: () => goTab(context, R.milkHub)),
+        ActionRow(icon: Icons.local_drink_outlined, title: 'Fresh milk at your door', subtitle: 'Every day, alternate days or the days you choose', onTap: () => goTab(context, R.milkHub)),
         ActionRow(icon: Icons.landscape_outlined, title: 'Our story', subtitle: '27 years of sweet beginnings', onTap: () => go(context, R.story), divider: false),
       ],
     );
@@ -580,7 +580,7 @@ class _GiftingScreenState extends State<GiftingScreen> {
 
   static const _copy = {
     'Festive': ('The Uttaranchal selection', 'A box full of traditions.', 'Choose your sweets, packaging and a personal message.'),
-    'Weddings': ('Shagun & celebrations', 'Sweetness for every guest.', 'Custom boxes for your big day — send us a bulk enquiry.'),
+    'Weddings': ('Shagun & celebrations', 'Sweetness for every guest.', 'Tell us about your big day and we’ll plan boxes for every guest.'),
     'Corporate': ('Teams & clients', 'Thank-yous that taste good.', 'Bulk pricing and delivery for your team and clients.'),
   };
 
@@ -591,7 +591,7 @@ class _GiftingScreenState extends State<GiftingScreen> {
       title: 'Gifts with heart',
       nav: NavKind.customer,
       navIndex: 1,
-      bottom: PrimaryButton('Create a gift box', onTap: () => go(context, R.giftBox)),
+      bottom: _occasion == 'Festive' ? PrimaryButton('Create a gift box', onTap: () => go(context, R.giftBox)) : null,
       children: [
         const Eyebrow('For every sweet occasion'),
         const Gap(10),
@@ -615,6 +615,12 @@ class _GiftingScreenState extends State<GiftingScreen> {
             ]),
           ),
         ),
+        if (_occasion != 'Festive') ...[
+          const Gap(16),
+          SectionTitle(_occasion == 'Weddings' ? 'Wedding enquiry' : 'Corporate gifting enquiry', size: 24),
+          BulkEnquiryForm(key: ValueKey(_occasion), occasion: _occasion == 'Weddings' ? 'Wedding' : 'Corporate gifting'),
+          const Gap(16),
+        ],
         const Gap(8),
         ActionRow(icon: Icons.inventory_2_outlined, title: 'Build your own gift box', subtitle: 'Choose up to ${context.app.config.giftMaxItems} favourites', onTap: () => go(context, R.giftBox)),
         ActionRow(icon: Icons.groups_outlined, title: 'Gift & bulk orders', subtitle: 'Weddings, festivals and corporate gifting', onTap: () => go(context, R.bulkEnquiry)),
@@ -818,26 +824,54 @@ class _GiftBoxScreenState extends State<GiftBoxScreen> {
 
 // ───────────────────────── 11 · Bulk & wholesale enquiry ─────────────────────────
 /// The website's "Bulk orders" and "Export" forms. [initialType] 'export' opens the export form.
-class BulkEnquiryScreen extends StatefulWidget {
+class BulkEnquiryScreen extends StatelessWidget {
   final String? initialType;
   const BulkEnquiryScreen({super.key, this.initialType});
 
   @override
-  State<BulkEnquiryScreen> createState() => _BulkEnquiryScreenState();
+  Widget build(BuildContext context) {
+    final t = (initialType ?? '').toLowerCase();
+    return UScaffold(
+      title: 'Celebrations, together',
+      nav: NavKind.customer,
+      navIndex: 1,
+      children: [
+        const Eyebrow('Gifting · Wholesale · Export'),
+        const Gap(10),
+        const Headline('Big occasions.\n*Thoughtful details.*', size: 34),
+        const Gap(14),
+        BulkEnquiryForm(export: t.contains('export') || t.contains('wholesale'), showToggle: true),
+      ],
+    );
+  }
 }
 
-class _BulkEnquiryScreenState extends State<BulkEnquiryScreen> {
-  late bool _export = (widget.initialType ?? '').toLowerCase().contains('export') || (widget.initialType ?? '').toLowerCase().contains('wholesale');
+/// Same fields and rules as the website's bulk-orders form (and the export form).
+/// Used on its own screen and inline on the Weddings / Corporate gifting tabs.
+class BulkEnquiryForm extends StatefulWidget {
+  final bool export;
+  final bool showToggle;
+
+  /// Pre-selected occasion, e.g. 'Wedding' or 'Corporate gifting'.
+  final String? occasion;
+  const BulkEnquiryForm({super.key, this.export = false, this.showToggle = false, this.occasion});
+
+  @override
+  State<BulkEnquiryForm> createState() => _BulkEnquiryFormState();
+}
+
+class _BulkEnquiryFormState extends State<BulkEnquiryForm> {
+  late bool _export = widget.export;
   late final _name = TextEditingController(text: context.appRead.signedIn ? context.appRead.userName : context.appRead.guestName);
   late final _email = TextEditingController(text: context.appRead.email);
   late final _phone = TextEditingController(text: context.appRead.phone);
-  final _qty = TextEditingController(text: '100');
+  final _qty = TextEditingController();
   final _company = TextEditingController();
   final _country = TextEditingController(text: 'India');
   final _message = TextEditingController();
-  String? _occasion;
+  late String? _occasion = widget.occasion;
   String? _exportType;
-  DateTime _date = DateTime.now().add(const Duration(days: 14));
+  DateTime? _date;
   bool _busy = false;
 
   @override
@@ -848,7 +882,27 @@ class _BulkEnquiryScreenState extends State<BulkEnquiryScreen> {
     super.dispose();
   }
 
+  String? _check() {
+    if (_name.text.trim().isEmpty) return 'Please enter your name';
+    if (!_email.text.contains('@')) return 'Please enter a valid email';
+    if (_export) {
+      if (_company.text.trim().isEmpty) return 'Please enter your company';
+      if (_country.text.trim().isEmpty) return 'Please enter your country';
+    } else {
+      if (!RegExp(r'^[6-9]\d{9}$').hasMatch(_phone.text.replaceAll(RegExp(r'\D'), ''))) return 'Enter a valid 10-digit mobile number';
+      if ((int.tryParse(_qty.text.trim()) ?? 0) < 1) return 'Please enter the estimated quantity';
+      if (_date == null) return 'Please choose the event date';
+    }
+    if (_message.text.trim().isEmpty) return _export ? 'Please tell us about your requirement' : 'Please describe the products, packaging & delivery you need';
+    return null;
+  }
+
   Future<void> _send() async {
+    final problem = _check();
+    if (problem != null) {
+      toast(context, problem);
+      return;
+    }
     final app = context.appRead;
     final cfg = app.config;
     FocusScope.of(context).unfocus();
@@ -868,13 +922,14 @@ class _BulkEnquiryScreenState extends State<BulkEnquiryScreen> {
               'email': _email.text.trim(),
               'phone': _phone.text.replaceAll(RegExp(r'\D'), ''),
               'occasion': _occasion ?? cfg.bulkOccasions.first,
-              'quantity': int.tryParse(_qty.text.trim()) ?? 0,
-              'event_date': isoDate(_date),
+              'quantity': int.parse(_qty.text.trim()),
+              'event_date': isoDate(_date!),
               'message': _message.text.trim(),
             });
       if (!mounted) return;
-      await showSuccess(context, title: 'Enquiry sent', message: msg, cta: 'Back to gifting');
-      if (mounted) Navigator.maybePop(context);
+      _message.clear();
+      _qty.clear();
+      await showSuccess(context, title: 'Enquiry sent', message: msg, cta: 'Done');
     } on ApiException catch (e) {
       if (mounted) toast(context, e.message);
     } finally {
@@ -885,56 +940,54 @@ class _BulkEnquiryScreenState extends State<BulkEnquiryScreen> {
   @override
   Widget build(BuildContext context) {
     final cfg = context.app.config;
-    return UScaffold(
-      title: 'Celebrations, together',
-      nav: NavKind.customer,
-      navIndex: 1,
-      bottom: PrimaryButton(_busy ? 'Sending…' : 'Send enquiry', onTap: _busy ? null : _send),
-      children: [
-        const Eyebrow('Gifting · Wholesale · Export'),
-        const Gap(10),
-        const Headline('Big occasions.\n*Thoughtful details.*', size: 34),
-        const Gap(14),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (widget.showToggle)
         ChipGroup(options: const ['Bulk / event order', 'Wholesale & export'], selected: _export ? 'Wholesale & export' : 'Bulk / event order', onSelected: (v) => setState(() => _export = v == 'Wholesale & export')),
-        UField(label: 'Your name', controller: _name),
-        UField(label: 'Email', controller: _email, keyboard: TextInputType.emailAddress),
-        if (!_export) ...[
-          UField(label: 'Mobile number', controller: _phone, prefixText: '+91', keyboard: TextInputType.phone, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)]),
-          UPicker(
-            label: 'Occasion',
-            value: _occasion ?? cfg.bulkOccasions.first,
-            onTap: () async {
-              final v = await pickOption(context, title: 'Occasion', options: cfg.bulkOccasions, selected: _occasion);
-              if (v != null) setState(() => _occasion = v);
-            },
-          ),
-          UField(label: 'Number of boxes / guests', controller: _qty, keyboard: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly]),
-          UPicker(
-            label: 'Event date',
-            value: isoDate(_date),
-            icon: Icons.calendar_today_outlined,
-            onTap: () async {
-              final now = DateTime.now();
-              final d = await pickDate(context, initial: _date, first: DateTime(now.year, now.month, now.day), last: now.add(const Duration(days: 730)));
-              if (d != null) setState(() => _date = d);
-            },
-          ),
-        ] else ...[
-          UField(label: 'Company', controller: _company),
-          UField(label: 'Country', controller: _country),
-          UPicker(
-            label: 'Enquiry type',
-            value: _exportType ?? cfg.exportTypes.first,
-            onTap: () async {
-              final v = await pickOption(context, title: 'Enquiry type', options: cfg.exportTypes, selected: _exportType);
-              if (v != null) setState(() => _exportType = v);
-            },
-          ),
-        ],
-        UField(label: 'Tell us more', controller: _message, maxLines: 4, hint: 'Sweets you have in mind, budget, delivery city…'),
-        const Gap(16),
-        const Note('Our team will confirm availability, lead time and a personalised quotation.'),
+      UField(label: 'Your name', controller: _name),
+      UField(label: 'Email address', controller: _email, keyboard: TextInputType.emailAddress),
+      if (!_export) ...[
+        UField(label: 'Phone number', controller: _phone, prefixText: '+91', keyboard: TextInputType.phone, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)]),
+        UPicker(
+          label: 'Occasion',
+          value: _occasion ?? cfg.bulkOccasions.first,
+          onTap: () async {
+            final v = await pickOption(context, title: 'Occasion', options: cfg.bulkOccasions, selected: _occasion);
+            if (v != null) setState(() => _occasion = v);
+          },
+        ),
+        UField(label: 'Estimated quantity', controller: _qty, keyboard: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly]),
+        UPicker(
+          label: 'Event date',
+          value: _date == null ? 'Choose a date' : dayMonth(_date!),
+          icon: Icons.calendar_today_outlined,
+          onTap: () async {
+            final now = DateTime.now();
+            final d = await pickDate(context, initial: _date ?? now.add(const Duration(days: 7)), first: DateTime(now.year, now.month, now.day), last: now.add(const Duration(days: 730)));
+            if (d != null) setState(() => _date = d);
+          },
+        ),
+      ] else ...[
+        UField(label: 'Company', controller: _company),
+        UField(label: 'Country', controller: _country),
+        UPicker(
+          label: 'Enquiry type',
+          value: _exportType ?? cfg.exportTypes.first,
+          onTap: () async {
+            final v = await pickOption(context, title: 'Enquiry type', options: cfg.exportTypes, selected: _exportType);
+            if (v != null) setState(() => _exportType = v);
+          },
+        ),
       ],
-    );
+      UField(
+        label: _export ? 'Tell us about your requirement' : 'Products, packaging & delivery requirements',
+        controller: _message,
+        maxLines: 4,
+        formatters: [LengthLimitingTextInputFormatter(2000)],
+      ),
+      const Gap(16),
+      PrimaryButton(_busy ? 'Sending…' : 'Send enquiry', onTap: _busy ? null : _send),
+      const Gap(12),
+      const Note('Our team will confirm availability, lead time and a personalised quotation.'),
+    ]);
   }
 }

@@ -6,6 +6,7 @@ import '../app/routes.dart';
 import '../app/theme.dart';
 import '../data/catalog.dart';
 import '../state/app_state.dart';
+import 'common.dart';
 import 'feedback.dart';
 
 /// Adds a product (in its default or chosen size) to the bag and tells the customer.
@@ -18,6 +19,81 @@ void addToBag(BuildContext context, Product p, {int? optionId, int qty = 1}) {
   }
   HapticFeedback.mediumImpact();
   toast(context, '${p.name} added to your bag', action: 'View bag', onAction: () => go(context, R.bag));
+}
+
+/// Bottom sheet to choose size and quantity before adding to the bag.
+Future<void> showAddToBagSheet(BuildContext context, Product p) async {
+  int? option = p.defaultOption?.id;
+  var qty = 1;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, set) {
+        final app = ctx.appRead;
+        final stock = p.stockFor(option);
+        final soldOut = p.soldOutFor(option);
+        final maxQty = (stock ?? app.config.maxLineQuantity).clamp(1, app.config.maxLineQuantity);
+        if (qty > maxQty) qty = maxQty;
+        final unit = p.priceFor(option);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                ClipRRect(borderRadius: BorderRadius.circular(12), child: NetImage(p.imageUrl, width: 64, height: 64, fallback: fallbackFor(p))),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(p.name, style: T.display(24), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('${p.labelFor(option)} · ${money(unit)}', style: T.tiny()),
+                  ]),
+                ),
+              ]),
+              if (p.options.length > 1) ...[
+                const SizedBox(height: 16),
+                Text('Size', style: T.sans(12, weight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final o in p.options)
+                    ChoiceChip(
+                      label: Text(o.soldOut ? '${o.label} · sold out' : '${o.label} · ${money(o.price)}'),
+                      selected: o.id == option,
+                      onSelected: o.soldOut ? null : (_) => set(() => option = o.id),
+                      selectedColor: AppColors.pink,
+                      labelStyle: T.sans(12, color: o.id == option ? AppColors.berry : AppColors.ink, weight: FontWeight.w600),
+                    ),
+                ]),
+              ],
+              const SizedBox(height: 16),
+              Row(children: [
+                Text('Quantity', style: T.sans(12, weight: FontWeight.w600)),
+                const Spacer(),
+                if (!soldOut) QtyStepper(value: qty, min: 1, max: maxQty, onChanged: (v) => set(() => qty = v)),
+              ]),
+              if (stock != null && !soldOut && stock <= 5)
+                Padding(padding: const EdgeInsets.only(top: 6), child: Text('Only $stock left', style: T.sans(11.5, color: AppColors.berry, weight: FontWeight.w600))),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.berry, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  onPressed: soldOut
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          addToBag(context, p, optionId: option, qty: qty);
+                        },
+                  child: Text(soldOut ? 'Sold out' : 'Add to bag · ${money(unit * qty)}', style: T.sans(14.5, color: AppColors.white, weight: FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    ),
+  );
 }
 
 /// Shop photo from the website (or a bundled picture while it loads / if it fails).
@@ -62,6 +138,7 @@ class ProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final soldOut = product.soldOut;
+    final inBag = context.app.qtyInBag(product.id);
     return Material(
       color: AppColors.surface,
       shape: const RoundedRectangleBorder(
@@ -99,6 +176,11 @@ class ProductCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(product.subtitle, style: T.tiny(), maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 10),
+                if (inBag > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('$inBag in your bag', style: T.sans(11, color: AppColors.berry, weight: FontWeight.w600)),
+                  ),
                 Row(children: [
                   Expanded(
                     child: Text(product.priceLabel.isNotEmpty ? product.priceLabel : money(product.price),
@@ -109,7 +191,7 @@ class ProductCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(7),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(7),
-                      onTap: soldOut ? null : () => addToBag(context, product),
+                      onTap: soldOut ? null : () => showAddToBagSheet(context, product),
                       child: const SizedBox(width: 30, height: 30, child: Icon(Icons.add_rounded, color: AppColors.white, size: 20)),
                     ),
                   ),

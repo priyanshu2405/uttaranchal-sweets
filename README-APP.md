@@ -55,3 +55,43 @@ Marked "coming soon" (no backend yet — screens kept, showing sample data or a 
 - Change `applicationId` / bundle id if you want something other than `com.uttaranchal.dairy.uttaranchal_app`.
 - Use Razorpay **live** keys in the server `.env` (the app reads the key from the server).
 - App Store / Play listing: account deletion is in You → Delete my account.
+
+## Update 2 (changes in this version)
+
+- Language switch removed everywhere (welcome screen and Help).
+- Staff entry removed from the customer "You" screen. The welcome screen link now reads "Staff sign in".
+  The hidden screen index (long-press the logo) now only works in debug builds.
+- "Use my current location" on the address screen (first-time setup, You → Delivery address, and checkout).
+  New plugins: geolocator, geocoding. New permissions: location (Android manifest, iOS Info.plist).
+- Gifting → Weddings / Corporate now show the website's bulk-order enquiry form, with the occasion filled in.
+  It sends to the same Admin → Enquiries list as the website.
+- Android back button: from any tab it now goes to Home; on Home, press back twice to exit.
+- Tapping + on a product card opens a sheet to pick size (if several) and quantity. Cards show "N in your bag".
+- Order tracking: the map is removed.
+- Milk plan: nothing is pre-selected. Alternate days shows a calendar to pick the first delivery (every other day
+  is highlighted). Select days has Mon–Sun buttons plus a calendar to add/remove single dates. Review shows the
+  first-month amount, then "Continue to payment" opens a payment screen; paying activates the plan.
+  Milk subscriptions still have no backend, so this payment is a preview (clearly labelled) — no money is taken.
+
+After copying these files: `flutter clean && flutter pub get`, then `cd ios && pod install` on a Mac
+(new location plugins), then `flutter analyze` and `flutter run`.
+
+## Update 3 — milk subscriptions & delivery staff (live)
+
+Install the backend zip `upload-backend-milk-staff.zip` on the server first.
+
+Customer app (Milk tab) — now real:
+- Build a plan (nothing pre-selected; calendars for alternate / select days), pay the first month by UPI/card
+  (Razorpay) or choose cash to the delivery person.
+- Live calendar: tap a day to skip it or add milk (closes at 8 PM the evening before). Holiday pause, change plan, cancel.
+- Milk balance with full statement and online top-up. Delivery details: time, who delivered, or why not.
+- Milk needs an account; guests are asked to sign in.
+
+Staff app:
+- Delivery staff (role set in Admin → Staff) sign in and land on their milk round: start round, stops in order,
+  call / directions, Delivered (empty bottles) or Not delivered (reason), record cash, undo, finish with a summary.
+  Bottom bar: Round · Stops · Summary. They can't open shop orders or stock.
+- Admins: Orders · Stock · Milk round (any route, including customers not yet on a route).
+- Everything shows live in the website admin under Milk & Delivery.
+
+No new plugins in this update. After copying: `flutter pub get`, `flutter analyze`, `flutter run`.

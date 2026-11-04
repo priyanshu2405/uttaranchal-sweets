@@ -61,12 +61,6 @@ class CartLine {
       );
 }
 
-class MilkTxn {
-  final String label;
-  final int amount; // +credit / -debit
-  MilkTxn(this.label, this.amount);
-}
-
 /// Single source of truth for the app. Shop data, account, bag and orders come from the
 /// Laravel backend, so the app and the website always show the same products and orders.
 class AppState extends ChangeNotifier {
@@ -117,7 +111,7 @@ class AppState extends ChangeNotifier {
     final u = p.getString('user');
     if (u != null && api.userToken != null) user = ApiUser.fromJson(jsonDecode(u) as Map<String, dynamic>);
     staffName = p.getString('staff_name');
-    language = p.getString('language') ?? language;
+    staffRole = p.getString('staff_role') ?? 'admin';
     notifications = p.getBool('notifications') ?? notifications;
     pincode = p.getString('pincode') ?? pincode;
     street = p.getString('street') ?? street;
@@ -150,7 +144,6 @@ class AppState extends ChangeNotifier {
     p.setString('cart', jsonEncode(cart.map((l) => l.toJson()).toList()));
     p.setStringList('favourites', favourites.map((e) => '$e').toList());
     p.setString('guest_orders', jsonEncode(guestOrderKeys));
-    p.setString('language', language);
     p.setBool('notifications', notifications);
     p.setString('pincode', pincode);
     p.setString('street', street);
@@ -179,7 +172,6 @@ class AppState extends ChangeNotifier {
   String guestPhone = '';
   String guestEmail = '';
 
-  String language = 'English';
   bool notifications = true;
 
   String get userName => user?.name ?? (guestName.isNotEmpty ? guestName : 'Guest');
@@ -201,6 +193,8 @@ class AppState extends ChangeNotifier {
     await _prefs?.setString('user', jsonEncode(user!.toJson()));
     await _syncFavouritesAfterSignIn();
     myOrders = [];
+    milkPlan = null;
+    milkLoaded = false;
     notifyListeners();
   }
 
@@ -278,14 +272,10 @@ class AppState extends ChangeNotifier {
     api.userToken = null;
     user = null;
     myOrders = [];
+    milkPlan = null;
+    milkLoaded = false;
     _prefs?.remove('user_token');
     _prefs?.remove('user');
-  }
-
-  void setLanguage(String v) {
-    language = v;
-    _save();
-    notifyListeners();
   }
 
   void toggleNotifications(bool v) {
@@ -428,6 +418,9 @@ class AppState extends ChangeNotifier {
   double get deliveryFee => quote?.deliveryFee ?? 0;
   double get bagTotal => quote?.total ?? itemsTotal;
   double get payable => bagTotal;
+
+  /// How many of this product (all sizes) are in the bag.
+  int qtyInBag(int productId) => cart.where((l) => l.productId == productId).fold(0, (s, l) => s + l.qty);
 
   CartLine? _line(int productId, int? optionId) {
     for (final l in cart) {
@@ -751,14 +744,23 @@ class AppState extends ChangeNotifier {
 
   // ---------- Shop staff (same accounts as /admin on the website) ----------
   String? staffName;
+  String staffRole = 'admin'; // admin | delivery
   bool get staffSignedIn => api.staffToken != null;
+  bool get isDeliveryStaff => staffRole == 'delivery';
+
+  /// The staff app's "home": delivery staff start on their milk round, admins on shop orders.
+  String get staffHome => isDeliveryStaff ? '/staff/dashboard' : '/staff/orders';
 
   Future<void> staffLogin(String email, String password) async {
     final res = await api.post('/staff/login', {'email': email, 'password': password, 'device_name': 'Uttaranchal staff app'}, ApiAuth.none);
     api.staffToken = res['token'] as String;
     staffName = '${(res['staff'] as Map)['name']}';
+    staffRole = '${(res['staff'] as Map)['role'] ?? 'admin'}';
+    staffDay = null;
+    staffRouteId = null;
     await _prefs?.setString('staff_token', api.staffToken!);
     await _prefs?.setString('staff_name', staffName!);
+    await _prefs?.setString('staff_role', staffRole);
     notifyListeners();
   }
 
@@ -773,8 +775,12 @@ class AppState extends ChangeNotifier {
   void _clearStaff() {
     api.staffToken = null;
     staffName = null;
+    staffRole = 'admin';
+    staffDay = null;
+    staffRouteId = null;
     _prefs?.remove('staff_token');
     _prefs?.remove('staff_name');
+    _prefs?.remove('staff_role');
   }
 
   Future<StaffDashboard> staffDashboard() async => StaffDashboard.fromJson(await api.get('/staff/dashboard', auth: ApiAuth.staff));
@@ -819,34 +825,150 @@ class AppState extends ChangeNotifier {
     }, ApiAuth.staff);
   }
 
-  // =====================================================================
-  // Everything below is SAMPLE data for screens that have no backend yet
-  // (milk subscriptions and the milk-delivery route). It is unchanged from
-  // the prototype and is clearly labelled "coming soon" in the app.
-  // =====================================================================
+  // ---------- Milk subscription (Api/MilkController on the server) ----------
+  MilkConfig milkConfig = const MilkConfig();
+  MilkPlan? milkPlan;
+  bool milkLoaded = false;
+  bool milkLoading = false;
+  String? milkError;
 
-  // ---------- Milk subscription ----------
-  bool milkPlanActive = true;
-  int milkLitres = 2;
-  String milkFrequency = 'Every day';
-  DateTime milkStart = DateTime(2026, 11, 1);
-  String milkSlot = Milk.slots.first;
+  bool get milkPlanActive => milkPlan?.isActive ?? false;
+
+  /// Loads the shop's milk settings and the customer's plan (needs sign-in).
+  Future<void> loadMilk() async {
+    if (!signedIn) {
+      milkPlan = null;
+      milkLoaded = true;
+      notifyListeners();
+      return;
+    }
+    milkLoading = true;
+    milkError = null;
+    notifyListeners();
+    try {
+      final results = await Future.wait([api.get('/milk/config'), api.get('/milk/subscription')]);
+      milkConfig = MilkConfig.fromJson(results[0]);
+      final sub = results[1]['subscription'];
+      milkPlan = sub is Map ? MilkPlan.fromJson(Map<String, dynamic>.from(sub)) : null;
+      milkLoaded = true;
+    } on ApiException catch (e) {
+      milkError = e.message;
+    } finally {
+      milkLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void _setPlan(Map<String, dynamic> res) {
+    final sub = res['subscription'];
+    milkPlan = sub is Map ? MilkPlan.fromJson(Map<String, dynamic>.from(sub)) : null;
+    notifyListeners();
+  }
+
+  // Plan being built or edited on the phone. Nothing is pre-selected.
+  int milkLitres = 0;
+  String? milkFrequency; // daily | alternate | custom
+  DateTime milkStart = _tomorrow();
+  String? milkSlot;
   bool milkReminders = true;
-  int milkBalance = 680;
-  final Set<int> pausedDays = {11, 12};
-  final List<MilkTxn> milkActivity = [
-    MilkTxn('7 Nov · 2 L delivered', -136),
-    MilkTxn('6 Nov · 2 L delivered', -136),
-    MilkTxn('1 Nov · Balance top-up', 1000),
-  ];
+  String milkPaymentMethod = 'upi'; // upi | card | cash
+  bool milkEditing = false;
+  final Set<int> milkWeekdays = {};
+  final Set<DateTime> milkExtraDates = {};
+  final Set<DateTime> milkSkippedDates = {};
 
-  int get perDelivery => milkLitres * Milk.pricePerLitre;
-  int get nextSevenDays => perDelivery * Milk.deliveriesPerWeek(milkFrequency);
+  static DateTime _tomorrow() {
+    final n = DateTime.now().add(const Duration(days: 1));
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
+  static String _ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Start building a new plan, or editing the current one.
+  void startMilkDraft({bool edit = false}) {
+    final p = milkPlan;
+    milkEditing = edit && p != null;
+    milkWeekdays.clear();
+    milkExtraDates.clear();
+    milkSkippedDates.clear();
+    if (milkEditing) {
+      milkLitres = p!.litres;
+      milkFrequency = p.frequency;
+      milkStart = p.startDate.isAfter(DateTime.now()) ? _day(p.startDate) : _tomorrow();
+      milkSlot = p.slot;
+      milkReminders = p.reminders;
+      milkWeekdays.addAll(p.weekdays);
+    } else {
+      milkLitres = 0;
+      milkFrequency = null;
+      milkStart = _tomorrow();
+      milkSlot = null;
+      milkReminders = true;
+    }
+    notifyListeners();
+  }
+
+  bool get milkPlanComplete =>
+      milkLitres > 0 && milkFrequency != null && milkSlot != null && (milkFrequency != 'custom' || milkWeekdays.isNotEmpty || milkExtraDates.isNotEmpty);
+
+  /// Delivery on [d] under the plan being built (mirrors the server rules).
+  bool milkDeliversOn(DateTime d) {
+    final day = _day(d);
+    if (day.isBefore(milkStart) || milkFrequency == null) return false;
+    if (milkSkippedDates.contains(day)) return false;
+    if (milkExtraDates.contains(day)) return true;
+    return switch (milkFrequency) {
+      'alternate' => day.difference(milkStart).inDays.isEven,
+      'custom' => milkWeekdays.contains(day.weekday),
+      _ => true,
+    };
+  }
+
+  void toggleMilkDate(DateTime d) {
+    final day = _day(d);
+    if (day.isBefore(milkStart)) return;
+    final inPattern = milkFrequency == 'custom' && milkWeekdays.contains(day.weekday);
+    if (milkDeliversOn(day)) {
+      inPattern ? milkSkippedDates.add(day) : milkExtraDates.remove(day);
+    } else {
+      inPattern ? milkSkippedDates.remove(day) : milkExtraDates.add(day);
+    }
+    notifyListeners();
+  }
+
+  void toggleMilkWeekday(int weekday) {
+    milkWeekdays.contains(weekday) ? milkWeekdays.remove(weekday) : milkWeekdays.add(weekday);
+    milkSkippedDates.removeWhere((d) => d.weekday == weekday);
+    milkExtraDates.removeWhere((d) => d.weekday == weekday);
+    notifyListeners();
+  }
+
+  int get milkDeliveriesFirstMonth {
+    var n = 0;
+    for (var i = 0; i < milkConfig.firstPaymentDays; i++) {
+      if (milkDeliversOn(milkStart.add(Duration(days: i)))) n++;
+    }
+    return n;
+  }
+
+  double get perDelivery => milkLitres * milkConfig.pricePerLitre;
+  double get milkFirstPayment => perDelivery * milkDeliveriesFirstMonth;
+
+  String get milkScheduleText => switch (milkFrequency) {
+        'custom' => milkWeekdays.isEmpty ? 'Selected dates' : (milkWeekdays.toList()..sort()).map((w) => const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][w - 1]).join(', '),
+        null => 'Not chosen',
+        _ => milkConfig.frequencyLabel(milkFrequency),
+      };
 
   void configureMilk({int? litres, String? frequency, DateTime? start, String? slot}) {
     if (litres != null) milkLitres = litres;
     if (frequency != null) milkFrequency = frequency;
-    if (start != null) milkStart = start;
+    if (start != null) {
+      milkStart = _day(start);
+      milkExtraDates.removeWhere((d) => d.isBefore(milkStart));
+      milkSkippedDates.removeWhere((d) => d.isBefore(milkStart));
+    }
     if (slot != null) milkSlot = slot;
     notifyListeners();
   }
@@ -856,52 +978,129 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void activateMilkPlan() {
-    milkPlanActive = true;
+  void setMilkPayment(String v) {
+    milkPaymentMethod = v;
     notifyListeners();
   }
 
-  void pauseDays(Iterable<int> days) {
-    pausedDays
-      ..clear()
-      ..addAll(days);
+  /// Saves the plan on the server (new plan → waits for the first payment).
+  Future<MilkPlan> saveMilkDraft() async {
+    final body = <String, dynamic>{
+      'litres': milkLitres,
+      'frequency': milkFrequency,
+      'weekdays': milkWeekdays.toList()..sort(),
+      'slot': milkSlot,
+      'reminders': milkReminders,
+      'address': fullAddress,
+      'pincode': pincode,
+      if (!milkEditing || milkPlan!.awaitingPayment || milkPlan!.startDate.isAfter(DateTime.now())) 'start_date': _ymd(milkStart),
+    };
+    if (!milkEditing) {
+      body['extra_dates'] = milkExtraDates.map(_ymd).toList();
+      body['skip_dates'] = milkSkippedDates.map(_ymd).toList();
+      if (user != null) {
+        body['customer_name'] = user!.name;
+        body['phone'] = user!.phone;
+      }
+    }
+    final res = milkEditing ? await api.patch('/milk/subscription', body) : await api.post('/milk/subscription', body);
+    _setPlan(res);
+    return milkPlan!;
+  }
+
+  /// Start a Razorpay payment into the milk balance. Returns the data the checkout needs.
+  Future<Map<String, dynamic>> startMilkTopup(double amount, String method) =>
+      api.post('/milk/topups', {'amount': double.parse(amount.toStringAsFixed(2)), 'method': method});
+
+  Future<void> verifyMilkTopup(int topupId, {required String paymentId, required String orderId, required String signature}) async {
+    _setPlan(await api.post('/milk/topups/$topupId/verify', {'razorpay_payment_id': paymentId, 'razorpay_order_id': orderId, 'razorpay_signature': signature}));
+  }
+
+  Future<String> milkStartWithCash() async {
+    final res = await api.post('/milk/subscription/cash');
+    _setPlan(res);
+    return '${res['message'] ?? 'Your milk plan is active.'}';
+  }
+
+  /// Skip a day or add milk on a day (respects the shop's evening cut-off).
+  Future<void> milkSetDay(DateTime date, bool deliver) async {
+    _setPlan(await api.post('/milk/subscription/day', {'date': _ymd(date), 'deliver': deliver}));
+  }
+
+  Future<String> milkPause(DateTime from, DateTime resume) async {
+    final res = await api.post('/milk/subscription/pause', {'from': _ymd(from), 'resume': _ymd(resume)});
+    _setPlan(res);
+    return '${res['message'] ?? 'Paused'}';
+  }
+
+  Future<String> milkCancel() async {
+    final res = await api.post('/milk/subscription/cancel');
+    milkPlan = null;
+    notifyListeners();
+    return '${res['message'] ?? 'Your milk plan has been cancelled.'}';
+  }
+
+  // ---------- Staff milk round (Api/Staff/StaffMilkController on the server) ----------
+  StaffMilkDay? staffDay;
+  int? staffRouteId;
+  bool staffDayLoading = false;
+  String? staffDayError;
+
+  Future<StaffMilkDay?> loadStaffDay({int? routeId}) async {
+    if (routeId != null) staffRouteId = routeId;
+    staffDayLoading = true;
+    staffDayError = null;
+    notifyListeners();
+    try {
+      final res = await api.get('/staff/milk/day', query: {if (staffRouteId != null) 'route_id': staffRouteId}, auth: ApiAuth.staff);
+      staffDay = StaffMilkDay.fromJson(res);
+      staffRouteId = staffDay!.route.id;
+    } on ApiException catch (e) {
+      staffDayError = e.message;
+    } finally {
+      staffDayLoading = false;
+      notifyListeners();
+    }
+    return staffDay;
+  }
+
+  Map<String, dynamic> get _routeParam => {if (staffRouteId != null) 'route_id': staffRouteId};
+
+  void _setDay(Map<String, dynamic> res) {
+    staffDay = StaffMilkDay.fromJson(res);
     notifyListeners();
   }
 
-  void topUpMilk(int amount) {
-    milkBalance += amount;
-    milkActivity.insert(0, MilkTxn('Today · Balance top-up', amount));
-    notifyListeners();
+  Future<void> staffStartShift({required int litresLoaded, required int bottlesLoaded}) async {
+    _setDay(await api.post('/staff/milk/shift/start', {..._routeParam, 'litres_loaded': litresLoaded, 'bottles_loaded': bottlesLoaded}, ApiAuth.staff));
   }
 
-  // ---------- Staff app ----------
-  final List<DeliveryStop> route = buildDemoRoute();
-  int bottlesCollected = 20;
-
-  List<DeliveryStop> get pendingStops => route.where((s) => s.status == StopStatus.scheduled).toList();
-  int get completedStops => route.where((s) => s.status == StopStatus.delivered).length;
-  int get exceptionStops => route.where((s) => s.status == StopStatus.exception).length;
-  int get assignedLitres => route.fold(0, (s, r) => s + r.litres);
-  int get deliveredLitres => route.where((s) => s.status == StopStatus.delivered).fold(0, (s, r) => s + r.litres);
-  int get chargesRecorded => deliveredLitres * Milk.pricePerLitre;
-  DeliveryStop? get nextStop => pendingStops.isEmpty ? null : pendingStops.first;
-
-  DeliveryStop stopByNumber(int? n) => route.firstWhere((s) => s.number == n, orElse: () => nextStop ?? route.last);
-
-  void markDelivered(DeliveryStop stop, {int? bottles}) {
-    stop.status = StopStatus.delivered;
-    bottlesCollected += bottles ?? stop.bottles;
-    notifyListeners();
+  Future<void> staffEndShift({required int bottlesReturned, String? note}) async {
+    _setDay(await api.post('/staff/milk/shift/end', {..._routeParam, 'bottles_returned': bottlesReturned, if (note != null && note.isNotEmpty) 'note': note}, ApiAuth.staff));
   }
 
-  void markException(DeliveryStop stop) {
-    stop.status = StopStatus.exception;
-    notifyListeners();
+  Future<String> staffDeliver(int id, {int bottlesBack = 0, String? note}) async {
+    final res = await api.post('/staff/milk/deliveries/$id/deliver', {'bottles_back': bottlesBack, if (note != null && note.isNotEmpty) 'note': note}, ApiAuth.staff);
+    await loadStaffDay();
+    return '${res['message'] ?? 'Delivered'}';
   }
 
-  void recordBottles(int n) {
-    bottlesCollected += n;
-    notifyListeners();
+  Future<String> staffException(int id, {required String reason, String? note}) async {
+    final res = await api.post('/staff/milk/deliveries/$id/exception', {'reason': reason, if (note != null && note.isNotEmpty) 'note': note}, ApiAuth.staff);
+    await loadStaffDay();
+    return '${res['message'] ?? 'Saved'}';
+  }
+
+  Future<String> staffUndo(int id) async {
+    final res = await api.post('/staff/milk/deliveries/$id/undo', null, ApiAuth.staff);
+    await loadStaffDay();
+    return '${res['message'] ?? 'Undone'}';
+  }
+
+  Future<String> staffCash(int id, double amount) async {
+    final res = await api.post('/staff/milk/deliveries/$id/cash', {'amount': amount}, ApiAuth.staff);
+    await loadStaffDay();
+    return '${res['message'] ?? 'Cash recorded'}';
   }
 }
 

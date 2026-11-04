@@ -109,9 +109,9 @@ class AccountScreen extends StatelessWidget {
         ActionRow(icon: Icons.receipt_long_outlined, title: 'My orders', subtitle: 'Track, reorder and view receipts', onTap: () => go(context, R.orderHistory)),
         ActionRow(icon: Icons.favorite_border_rounded, title: 'Favourites', subtitle: '${app.favourites.length} saved', onTap: () => go(context, R.favourites)),
         ActionRow(icon: Icons.location_on_outlined, title: 'Delivery address', subtitle: app.hasAddress ? '${app.fullAddress} · ${app.pincode}' : 'Add your address', onTap: () => go(context, R.location, args: 'edit')),
-        ActionRow(icon: Icons.local_drink_outlined, title: 'Milk subscription', subtitle: 'Coming soon', onTap: () => goTab(context, R.milkHub)),
+        ActionRow(icon: Icons.local_drink_outlined, title: 'Milk subscription', subtitle: context.app.milkPlan == null ? 'Daily milk at your door' : '${context.app.milkPlan!.litres} L · ${context.app.milkPlan!.statusLabel}', onTap: () => goTab(context, R.milkHub)),
         ActionRow(icon: Icons.landscape_outlined, title: 'Our story & visit us', subtitle: '27 years of sweet beginnings', onTap: () => go(context, R.story)),
-        ActionRow(icon: Icons.help_outline_rounded, title: 'Help & preferences', subtitle: 'Message the shop, language & notifications', onTap: () => go(context, R.help)),
+        ActionRow(icon: Icons.help_outline_rounded, title: 'Help & preferences', subtitle: 'Message the shop & notifications', onTap: () => go(context, R.help)),
         ActionRow(icon: Icons.policy_outlined, title: 'FAQ & policies', subtitle: 'Delivery, returns, privacy and terms', onTap: () => go(context, R.info, args: 'faq')),
         if (app.signedIn) ...[
           ActionRow(icon: Icons.lock_outline_rounded, title: 'Change password', subtitle: 'Also changes it for the website', onTap: () => _changePassword(context)),
@@ -128,17 +128,6 @@ class AccountScreen extends StatelessWidget {
           ),
           ActionRow(icon: Icons.delete_outline_rounded, title: 'Delete my account', subtitle: 'Permanently remove your account', onTap: () => _deleteAccount(context)),
         ],
-        const Gap(18),
-        Text('SHOP STAFF', style: T.eyebrow(AppColors.muted)),
-        ActionRow(
-          icon: Icons.storefront_rounded,
-          title: 'Staff app',
-          subtitle: 'Live shop orders & stock (staff sign-in)',
-          iconBg: AppColors.mint,
-          iconColor: AppColors.teal,
-          divider: false,
-          onTap: () => go(context, app.staffSignedIn ? R.staffOrders : R.staffSignIn),
-        ),
       ],
     );
   }
@@ -536,18 +525,6 @@ class _HelpScreenState extends State<HelpScreen> {
         ],
         const Gap(16),
         const Divider(color: AppColors.border),
-        UPicker(
-          label: 'App language',
-          value: app.language,
-          icon: Icons.translate_rounded,
-          onTap: () async {
-            final v = await pickOption(context, title: 'App language', options: const ['English', 'हिन्दी'], selected: app.language);
-            if (v != null && context.mounted) {
-              context.appRead.setLanguage(v);
-              if (v != 'English') toast(context, 'Full Hindi screens are coming soon');
-            }
-          },
-        ),
         const Gap(12),
         ToggleCard(title: 'Order notifications', value: app.notifications, onChanged: context.appRead.toggleNotifications, card: false),
       ],

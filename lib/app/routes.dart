@@ -39,6 +39,7 @@ class R {
   static const milkPause = '/milk/pause'; // 26
   static const milkProof = '/milk/proof'; // 27
   static const milkTopUp = '/milk/top-up'; // 28
+  static const milkPayment = '/milk/payment';
 
   // Rewards
   static const rewards = '/rewards'; // 29

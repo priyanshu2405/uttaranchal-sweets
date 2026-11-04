@@ -6,6 +6,7 @@ import '../app/routes.dart';
 import '../app/theme.dart';
 import '../state/app_state.dart';
 import 'common.dart';
+import 'feedback.dart';
 
 enum NavKind { none, customer, staff }
 
@@ -45,6 +46,19 @@ class UScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final showNav = nav != NavKind.none && !keyboardOpen;
+    final route = ModalRoute.of(context);
+    return PopScope(
+      // Normal screens pop as usual. On a root screen (nothing underneath), back goes to
+      // Home instead of closing the app; on Home itself, press back twice to exit.
+      canPop: route?.canPop ?? false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) handleRootBack(context, route?.settings.name);
+      },
+      child: _body(context, showNav),
+    );
+  }
+
+  Widget _body(BuildContext context, bool showNav) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: AppTheme.overlay,
       child: Scaffold(
@@ -76,6 +90,25 @@ class UScaffold extends StatelessWidget {
       ),
     );
   }
+}
+
+DateTime? _lastBackPress;
+
+/// Android back on a screen with nothing underneath it.
+void handleRootBack(BuildContext context, String? routeName) {
+  final staff = routeName != null && routeName.startsWith('/staff') && routeName != R.staffSignIn;
+  final home = staff ? context.appRead.staffHome : R.home;
+  if (routeName != home) {
+    goTab(context, home);
+    return;
+  }
+  final now = DateTime.now();
+  if (_lastBackPress != null && now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+    SystemNavigator.pop();
+    return;
+  }
+  _lastBackPress = now;
+  toast(context, 'Press back again to exit');
 }
 
 class UHeader extends StatelessWidget {
@@ -218,12 +251,23 @@ class StaffNav extends StatelessWidget {
   final int index;
   const StaffNav({super.key, required this.index});
 
-  static const _items = [
+  static const _adminItems = [
     _NavItem(Icons.receipt_long_outlined, Icons.receipt_long_rounded, 'Orders', R.staffOrders),
     _NavItem(Icons.inventory_2_outlined, Icons.inventory_2_rounded, 'Stock', R.staffProducts),
-    _NavItem(Icons.alt_route_outlined, Icons.alt_route_rounded, 'Milk route', R.staffDashboard),
+    _NavItem(Icons.alt_route_outlined, Icons.alt_route_rounded, 'Milk round', R.staffDashboard),
+  ];
+
+  /// Delivery staff only have the milk round.
+  static const _deliveryItems = [
+    _NavItem(Icons.alt_route_outlined, Icons.alt_route_rounded, 'Round', R.staffDashboard),
+    _NavItem(Icons.format_list_numbered_rounded, Icons.format_list_numbered_rounded, 'Stops', R.staffRoute),
+    _NavItem(Icons.summarize_outlined, Icons.summarize_rounded, 'Summary', R.staffSummary),
   ];
 
   @override
-  Widget build(BuildContext context) => _UBottomNav(items: _items, index: index);
+  Widget build(BuildContext context) {
+    final delivery = context.app.isDeliveryStaff;
+    final items = delivery ? _deliveryItems : _adminItems;
+    return _UBottomNav(items: items, index: index.clamp(0, items.length - 1));
+  }
 }

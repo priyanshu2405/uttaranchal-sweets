@@ -5,6 +5,7 @@ import 'app/router.dart';
 import 'app/routes.dart';
 import 'app/theme.dart';
 import 'state/app_state.dart';
+import 'widgets/feedback.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,8 @@ class UttaranchalApp extends StatelessWidget {
         theme: AppTheme.light,
         initialRoute: R.welcome,
         onGenerateRoute: AppRouter.onGenerateRoute,
+        scaffoldMessengerKey: appMessengerKey,
+        navigatorObservers: [ToastCleaner()],
         // Keep the carefully-set type legible but stop very large system
         // font sizes from breaking the demo layouts.
         builder: (context, child) {

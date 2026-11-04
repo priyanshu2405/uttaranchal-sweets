@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Needed to reach the shop's server (release builds have no network without it). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- "Use my current location" when adding an address. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="Uttaranchal"
         android:name="${applicationName}"

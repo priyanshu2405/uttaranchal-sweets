@@ -4,14 +4,82 @@ import 'package:flutter/services.dart';
 import '../app/theme.dart';
 import 'common.dart';
 
+/// App-wide messenger, so toasts can be cleared when the screen changes (see [ToastCleaner]).
+final GlobalKey<ScaffoldMessengerState> appMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+DateTime? _lastToastAt;
+
+/// Short message at the bottom of the screen.
+///
+/// Newer Flutter versions keep a SnackBar with an action button (e.g. "Undo") on screen until it is
+/// tapped, and never time it out when iOS accessibility features are on. That left toasts stuck over
+/// the bottom bar. So every toast is closed by a timer we control, can be dismissed with a tap, and is
+/// cleared whenever the user moves to another screen.
 void toast(BuildContext context, String message, {String? action, VoidCallback? onAction}) {
-  final m = ScaffoldMessenger.of(context);
+  final m = appMessengerKey.currentState ?? ScaffoldMessenger.maybeOf(context);
+  if (m == null) return;
   m.hideCurrentSnackBar();
-  m.showSnackBar(SnackBar(
-    content: Text(message),
-    duration: const Duration(milliseconds: 2400),
-    action: action == null ? null : SnackBarAction(label: action, onPressed: onAction ?? () {}),
+  _lastToastAt = DateTime.now();
+  final duration = Duration(milliseconds: action == null ? 2400 : 4000);
+  final controller = m.showSnackBar(SnackBar(
+    content: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: m.hideCurrentSnackBar,
+      child: Text(message),
+    ),
+    duration: duration,
+    dismissDirection: DismissDirection.horizontal,
+    action: action == null
+        ? null
+        : SnackBarAction(
+            label: action,
+            onPressed: () {
+              m.hideCurrentSnackBar();
+              onAction?.call();
+            },
+          ),
   ));
+  var closed = false;
+  controller.closed.then((_) => closed = true);
+  Future.delayed(duration + const Duration(milliseconds: 300), () {
+    if (!closed) {
+      try {
+        controller.close();
+      } catch (_) {
+        // Already gone (e.g. the app was rebuilt) — nothing to do.
+      }
+    }
+  });
+}
+
+/// Clears any toast when the user navigates, so a message from one screen never sits over another.
+class ToastCleaner extends NavigatorObserver {
+  void _clear() {
+    // Keep a toast that was shown as part of this same tap (e.g. "Added to bag" → open the bag).
+    final shown = _lastToastAt;
+    if (shown != null && DateTime.now().difference(shown) < const Duration(milliseconds: 800)) return;
+    appMessengerKey.currentState?.hideCurrentSnackBar();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) _clear();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) _clear();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (newRoute is PageRoute) _clear();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) _clear();
+  }
 }
 
 /// Bottom-sheet single choice list. Returns the selected option or null.

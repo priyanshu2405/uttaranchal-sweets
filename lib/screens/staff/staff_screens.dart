@@ -1,94 +1,204 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/nav.dart';
 import '../../app/routes.dart';
 import '../../app/theme.dart';
+import '../../data/api.dart';
 import '../../data/catalog.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../../widgets/feedback.dart';
 import '../../widgets/fields.dart';
-import '../../widgets/illustrations.dart';
+import '../../widgets/product_widgets.dart';
 import '../../widgets/u_scaffold.dart';
+import 'shop_staff_screens.dart' show staffSignOut;
 
-const _staffSubtitle = 'Milk route · sample data';
+// Milk delivery round for the staff app (server: Api/Staff/StaffMilkController).
+// Delivery staff see their own route for today; admins can open any route.
 
-// ───────────────────────── 36 · Distribution dashboard ─────────────────────────
-class StaffDashboardScreen extends StatelessWidget {
+const _subtitle = 'Uttaranchal Dairy · Milk round';
+
+String _clock(DateTime d) {
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  return '$h:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'AM' : 'PM'}';
+}
+
+void _err(BuildContext context, Object e) => toast(context, e is ApiException ? e.message : 'Something went wrong. Please try again.');
+
+bool _needsStaff(BuildContext context) {
+  if (context.appRead.staffSignedIn) return false;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (context.mounted) Navigator.of(context).pushNamedAndRemoveUntil(R.staffSignIn, (r) => r.isFirst);
+  });
+  return true;
+}
+
+Future<void> _open(BuildContext context, Uri uri) async {
+  if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) toast(context, 'Couldn’t open that');
+}
+
+Future<int?> _askNumber(BuildContext context, {required String title, required String label, int initial = 0, String? hint}) async {
+  final c = TextEditingController(text: initial == 0 ? '' : '$initial');
+  final v = await showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.viewInsetsOf(ctx).bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: T.display(26)),
+        if (hint != null) ...[const Gap(6), Text(hint, style: T.body())],
+        UField(label: label, controller: c, keyboard: TextInputType.number, autofocus: true, formatters: [FilteringTextInputFormatter.digitsOnly]),
+        const Gap(18),
+        PrimaryButton('Save', color: AppColors.teal, icon: null, onTap: () => Navigator.pop(ctx, c.text.trim())),
+      ]),
+    ),
+  );
+  if (v == null) return null;
+  return int.tryParse(v) ?? 0;
+}
+
+/// Loads the day on first open and shows a loader / error until it arrives.
+abstract class _DayState<T extends StatefulWidget> extends State<T> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.appRead.staffSignedIn && (context.appRead.staffDay == null || reloadOnOpen)) context.appRead.loadStaffDay();
+    });
+  }
+
+  bool get reloadOnOpen => true;
+
+  Widget? loader(String title, {int navIndex = 0}) {
+    final app = context.app;
+    if (app.staffDay != null) return null;
+    return UScaffold(title: title, subtitle: _subtitle, nav: NavKind.staff, navIndex: navIndex, trailing: null, children: [
+      LoadState(loading: app.staffDayError == null, error: app.staffDayError, onRetry: () => context.appRead.loadStaffDay()),
+      if (app.staffDayError != null && app.isDeliveryStaff) OutlineBtn('Sign out', icon: Icons.logout_rounded, onTap: () => staffSignOut(context)),
+    ]);
+  }
+}
+
+// ───────────────────────── 36 · Milk round (home) ─────────────────────────
+class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
 
   @override
+  State<StaffDashboardScreen> createState() => _StaffDashboardScreenState();
+}
+
+class _StaffDashboardScreenState extends _DayState<StaffDashboardScreen> {
+  bool _busy = false;
+
+  Future<void> _start(StaffMilkDay day) async {
+    final litres = await _askNumber(context, title: 'Start your round', label: 'Litres loaded', initial: day.sum('litres_planned'), hint: 'Today’s round needs ${day.sum('litres_planned')} L for ${day.stops.length} stops.');
+    if (litres == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await context.appRead.staffStartShift(litresLoaded: litres, bottlesLoaded: litres);
+      if (mounted) toast(context, 'Round started — have a good morning!');
+    } catch (e) {
+      if (mounted) _err(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_needsStaff(context)) return const Scaffold(backgroundColor: AppColors.cream);
+    final wait = loader('Milk round');
+    if (wait != null) return wait;
     final app = context.app;
-    final total = app.route.length;
-    final done = app.completedStops;
-    final next = app.nextStop;
+    final day = app.staffDay!;
+    final done = day.sum('delivered') + day.sum('exceptions');
+    final total = day.stops.length;
+    final next = day.next;
     return UScaffold(
-      title: 'Milk route',
-      subtitle: _staffSubtitle,
+      title: 'Namaste, ${(app.staffName ?? 'team').split(' ').first}.',
+      subtitle: _subtitle,
       nav: NavKind.staff,
-      navIndex: 2,
-      trailing: IconTileButton(Icons.storefront_rounded, onTap: () => _exit(context)),
-      bottom: PrimaryButton(
-        next == null ? 'Close today’s shift' : 'Continue my route',
-        color: AppColors.teal,
-        onTap: () {
-          if (next == null) {
-            goTab(context, R.staffSummary);
-          } else {
-            go(context, R.staffStop, args: next.number);
-          }
-        },
-      ),
+      navIndex: app.isDeliveryStaff ? 0 : 2,
+      trailing: app.isDeliveryStaff ? IconTileButton(Icons.logout_rounded, onTap: () => staffSignOut(context)) : IconTileButton(Icons.refresh_rounded, onTap: () => context.appRead.loadStaffDay()),
       children: [
-        const Note('Milk delivery routes are coming soon. This screen shows sample data so you can see how it will work.'),
-        const Gap(12),
-        const Eyebrow('Morning shift · sample'),
-        const Gap(10),
-        const Headline('A fresh route.\nA *good morning.*'),
-        const Gap(16),
+        if (day.routes.length > 1) ...[
+          UPicker(
+            label: 'Route',
+            value: day.route.staffName == null || day.route.id == 0 ? day.route.name : '${day.route.name} · ${day.route.staffName}',
+            icon: Icons.alt_route_rounded,
+            onTap: () async {
+              final labels = {for (final r in day.routes) r.staffName == null || r.id == 0 ? r.name : '${r.name} · ${r.staffName}': r.id};
+              final v = await pickOption(context, title: 'Choose route', options: labels.keys.toList());
+              if (v != null && context.mounted) context.appRead.loadStaffDay(routeId: labels[v]);
+            },
+          ),
+          const Gap(10),
+        ] else ...[
+          Eyebrow('${day.route.name} · ${dayMonth(day.date)}'),
+          const Gap(10),
+        ],
         ColorBlock(
           color: AppColors.teal,
-          onTap: () => goTab(context, R.staffRoute),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('PATEL  NAGAR  ·  ROUTE  A', style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w700, spacing: 1.2)),
-            const Gap(12),
-            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text('$total', style: T.display(44, color: AppColors.white)),
-              const SizedBox(width: 8),
-              Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('households', style: T.sans(12, color: AppColors.white))),
-            ]),
-            Text('${app.assignedLitres} L assigned · 6:00–8:00 AM', style: T.sans(11.5, color: AppColors.white)),
-            const Gap(14),
-            UProgressBar(done / total),
+            Text(
+              day.shiftEnded != null
+                  ? 'ROUND  FINISHED  ·  ${_clock(day.shiftEnded!)}'
+                  : day.shiftStarted != null
+                      ? 'ON  ROUND  SINCE  ${_clock(day.shiftStarted!)}'
+                      : 'NOT  STARTED',
+              style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w700, spacing: 1.2),
+            ),
             const Gap(10),
-            Text('$done completed · ${app.pendingStops.length} remaining${app.exceptionStops > 0 ? ' · ${app.exceptionStops} exception' : ''}',
-                style: T.sans(11, color: AppColors.white)),
+            Text('$done of $total stops', style: T.display(32, color: AppColors.white)),
+            const Gap(8),
+            UProgressBar(total == 0 ? 1.0 : (done / total).clamp(0.0, 1.0).toDouble()),
+            const Gap(8),
+            Text('${day.sum('litres_delivered')} of ${day.sum('litres_planned')} L delivered${day.litresLoaded > 0 ? ' · ${day.litresLoaded} L loaded' : ''}', style: T.sans(11.5, color: AppColors.white)),
           ]),
         ),
         const Gap(10),
-        StatPair(
-          StatCard('${app.deliveredLitres} L', 'Delivered so far'),
-          StatCard('${app.assignedLitres - app.deliveredLitres} L', 'Remaining to deliver'),
-        ),
-        const Gap(4),
-        ActionRow(
-          icon: Icons.alt_route_rounded,
-          title: 'Open route & stops',
-          subtitle: next == null ? 'All stops completed' : 'Next: ${next.name} · ${next.litres} L',
-          onTap: () => goTab(context, R.staffRoute),
-        ),
-        ActionRow(icon: Icons.inventory_2_outlined, title: 'Bottle returns & stock', subtitle: 'Record empty bottles and leftover milk', onTap: () => goTab(context, R.staffStock)),
-        ActionRow(icon: Icons.task_alt_rounded, title: 'Close today’s shift', subtitle: 'Review quantities and exceptions', onTap: () => goTab(context, R.staffSummary), divider: false),
+        if (day.shiftStarted == null && total > 0)
+          PrimaryButton(_busy ? 'Starting…' : 'Start my round', color: AppColors.teal, icon: Icons.play_arrow_rounded, onTap: _busy ? null : () => _start(day))
+        else if (next != null)
+          UCard(
+            onTap: () => go(context, R.staffStop, args: next.id),
+            child: Row(children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppColors.berry, borderRadius: BorderRadius.circular(10)),
+                child: Text('${next.position}', style: T.sans(14, color: AppColors.white, weight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Next: ${next.customerName}', style: T.title()),
+                  Text('${next.litres} L · ${next.address}', style: T.small(), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ]),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ]),
+          )
+        else if (total > 0 && day.shiftEnded == null)
+          PrimaryButton('All stops done — finish round', color: AppColors.teal, onTap: () => go(context, R.staffSummary)),
+        if (total == 0) const LoadState(empty: 'No deliveries on this route today.'),
+        const Gap(14),
+        StatPair(StatCard('${day.sum('delivered')}', 'Delivered', valueColor: AppColors.teal), StatCard('${day.sum('exceptions')}', 'Not delivered')),
+        const Gap(10),
+        StatPair(StatCard('${day.sum('pending')}', 'To go', valueColor: AppColors.ink), StatCard(money(day.amountOf('cash_collected')), 'Cash collected', valueColor: AppColors.teal)),
+        const Gap(6),
+        ActionRow(icon: Icons.format_list_numbered_rounded, title: 'All stops', subtitle: '$total stops in order', onTap: () => go(context, R.staffRoute)),
+        ActionRow(icon: Icons.inventory_2_outlined, title: 'Milk & bottles', subtitle: 'Loaded, delivered and empties', onTap: () => go(context, R.staffStock)),
+        ActionRow(icon: Icons.summarize_outlined, title: 'Round summary', subtitle: day.shiftEnded != null ? 'Finished' : 'Finish your round here', onTap: () => go(context, R.staffSummary), divider: false),
       ],
     );
   }
 }
 
-Future<void> _exit(BuildContext context) async => goTab(context, R.staffOrders);
-
-// ───────────────────────── 37 · Route & delivery stops ─────────────────────────
+// ───────────────────────── 37 · All stops ─────────────────────────
 class StaffRouteScreen extends StatefulWidget {
   const StaffRouteScreen({super.key});
 
@@ -96,171 +206,191 @@ class StaffRouteScreen extends StatefulWidget {
   State<StaffRouteScreen> createState() => _StaffRouteScreenState();
 }
 
-class _StaffRouteScreenState extends State<StaffRouteScreen> {
-  String _filter = 'Remaining';
+class _StaffRouteScreenState extends _DayState<StaffRouteScreen> {
+  String _filter = 'To go';
 
   @override
   Widget build(BuildContext context) {
+    if (_needsStaff(context)) return const Scaffold(backgroundColor: AppColors.cream);
     final app = context.app;
-    final next = app.nextStop;
-    final stops = switch (_filter) {
-      'Completed' => app.route.where((s) => s.status != StopStatus.scheduled).toList(),
-      'All' => app.route,
-      _ => app.pendingStops,
+    final wait = loader('Stops', navIndex: app.isDeliveryStaff ? 1 : 2);
+    if (wait != null) return wait;
+    final day = app.staffDay!;
+    final shown = switch (_filter) {
+      'To go' => day.stops.where((s) => s.isPending).toList(),
+      'Done' => day.stops.where((s) => !s.isPending).toList(),
+      _ => day.stops,
     };
     return UScaffold(
-      title: 'Today’s route',
-      subtitle: _staffSubtitle,
+      title: 'Stops · ${day.route.name}',
+      subtitle: _subtitle,
       nav: NavKind.staff,
-      navIndex: 2,
-      trailing: null,
-      bottom: PrimaryButton(
-        next == null ? 'View shift summary' : 'Open next delivery',
-        color: AppColors.teal,
-        onTap: () {
-          if (next == null) {
-            goTab(context, R.staffSummary);
-          } else {
-            go(context, R.staffStop, args: next.number);
-          }
-        },
-      ),
+      navIndex: app.isDeliveryStaff ? 1 : 2,
+      trailing: IconTileButton(Icons.refresh_rounded, onTap: () => context.appRead.loadStaffDay()),
       children: [
-        const RouteMap(height: 160, animated: true),
-        const Gap(16),
-        Row(children: [
-          Expanded(child: Text('Route A · Patel Nagar', style: T.display(26))),
-          Pill('${app.pendingStops.length} left'),
-        ]),
-        const Gap(10),
-        ChipGroup(options: const ['Remaining', 'Completed', 'All'], selected: _filter, onSelected: (v) => setState(() => _filter = v)),
-        const Gap(6),
-        if (stops.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 30),
-            child: Center(child: Text(_filter == 'Remaining' ? 'Every stop is done. Lovely work!' : 'No stops here yet.', style: T.body())),
-          ),
-        for (final s in stops) _StopRow(stop: s),
+        ChipGroup(
+          options: ['To go · ${day.sum('pending')}', 'Done · ${day.sum('delivered') + day.sum('exceptions')}', 'All · ${day.stops.length}'],
+          selected: '$_filter · ${_filter == 'To go' ? day.sum('pending') : _filter == 'Done' ? day.sum('delivered') + day.sum('exceptions') : day.stops.length}',
+          onSelected: (v) => setState(() => _filter = v.split(' · ').first),
+        ),
         const Gap(12),
-        const Note('Paused subscriptions are excluded from today’s route. Open a stop to check the requested quantity.', tone: NoteTone.mint),
+        if (app.staffDayLoading) const LinearProgressIndicator(minHeight: 2, color: AppColors.teal),
+        if (shown.isEmpty) LoadState(empty: _filter == 'To go' ? 'Nothing left — well done!' : 'No stops here.'),
+        for (final s in shown) _StopRow(s),
       ],
     );
   }
 }
 
 class _StopRow extends StatelessWidget {
-  final DeliveryStop stop;
-  const _StopRow({required this.stop});
+  final MilkStop s;
+  const _StopRow(this.s);
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = switch (stop.status) {
-      StopStatus.delivered => ('Delivered', AppColors.teal),
-      StopStatus.exception => ('Exception', AppColors.berry),
-      StopStatus.scheduled => ('Scheduled', AppColors.teal),
-    };
-    final done = stop.status != StopStatus.scheduled;
+    final (bg, fg, icon) = s.isDelivered
+        ? (AppColors.mint, AppColors.teal, Icons.check_rounded)
+        : s.isException
+            ? (AppColors.pink, AppColors.berry, Icons.close_rounded)
+            : (AppColors.peach, AppColors.ink, null);
     return InkWell(
-      onTap: () => go(context, R.staffStop, args: stop.number),
+      onTap: () => go(context, R.staffStop, args: s.id),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSoft))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Row(children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 34,
+            height: 34,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: done ? AppColors.mint : AppColors.peach, borderRadius: BorderRadius.circular(9)),
-            child: done
-                ? Icon(stop.status == StopStatus.delivered ? Icons.check_rounded : Icons.priority_high_rounded, size: 16, color: color)
-                : Text('${stop.number}', style: T.sans(11.5, color: AppColors.berry, weight: FontWeight.w700)),
+            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(9)),
+            child: icon != null ? Icon(icon, size: 18, color: fg) : Text('${s.position}', style: T.sans(13, weight: FontWeight.w700, color: fg)),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(stop.name, style: T.title()),
-              const Gap(2),
-              Text('${stop.address.split(',').take(2).join(',')}\nFull Cream Milk', style: T.tiny()),
+              Text(s.customerName, style: T.title()),
+              Text(s.address, style: T.small(), maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (s.isException) Text(s.statusLabel, style: T.tiny(AppColors.berry)),
             ]),
           ),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('${stop.litres} L · ${rupees(stop.charge)}', style: T.sans(12, color: AppColors.teal, weight: FontWeight.w600)),
-            const Gap(2),
-            Text(label, style: T.sans(9.5, color: color, weight: FontWeight.w600)),
-          ]),
+          Text('${s.litres} L', style: T.sans(14, weight: FontWeight.w700)),
         ]),
       ),
     );
   }
 }
 
-// ───────────────────────── 38 · Delivery stop details ─────────────────────────
-class StaffStopScreen extends StatelessWidget {
+// ───────────────────────── 38 · One stop ─────────────────────────
+class StaffStopScreen extends StatefulWidget {
+  /// The delivery id (from the stops list).
   final int? stopNumber;
   const StaffStopScreen({super.key, this.stopNumber});
 
   @override
+  State<StaffStopScreen> createState() => _StaffStopScreenState();
+}
+
+class _StaffStopScreenState extends _DayState<StaffStopScreen> {
+  bool _busy = false;
+
+  @override
+  bool get reloadOnOpen => false;
+
+  Future<void> _run(Future<String> Function() action) async {
+    setState(() => _busy = true);
+    try {
+      final msg = await action();
+      if (mounted) toast(context, msg);
+    } catch (e) {
+      if (mounted) _err(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_needsStaff(context)) return const Scaffold(backgroundColor: AppColors.cream);
     final app = context.app;
-    final s = app.stopByNumber(stopNumber);
-    final done = s.status != StopStatus.scheduled;
+    final wait = loader('Stop');
+    if (wait != null) return wait;
+    final s = app.staffDay!.stopById(widget.stopNumber) ?? app.staffDay!.next;
+    if (s == null) {
+      return UScaffold(title: 'Stop', subtitle: _subtitle, trailing: null, children: const [LoadState(empty: 'This stop is no longer on today’s list.')]);
+    }
     return UScaffold(
-      title: 'Stop ${s.number} of ${app.route.length}',
-      subtitle: _staffSubtitle,
-      nav: NavKind.staff,
-      navIndex: 2,
-      trailing: IconTileButton(Icons.call_outlined, onTap: () => toast(context, 'Calling ${s.name}… (demo)')),
-      bottom: done
-          ? OutlineBtn('Back to route', color: AppColors.teal, onTap: () => Navigator.maybePop(context))
-          : PrimaryButton('Record delivery', color: AppColors.teal, onTap: () => go(context, R.staffConfirm, args: s.number)),
+      title: 'Stop ${s.position}',
+      subtitle: _subtitle,
+      trailing: null,
+      bottom: s.isPending
+          ? Row(children: [
+              Expanded(child: OutlineBtn('Not delivered', icon: null, onTap: _busy ? null : () => go(context, R.staffException, args: s.id))),
+              const SizedBox(width: 10),
+              Expanded(child: PrimaryButton('Delivered', color: AppColors.teal, icon: Icons.check_rounded, onTap: _busy ? null : () => go(context, R.staffConfirm, args: s.id))),
+            ])
+          : OutlineBtn(_busy ? 'Please wait…' : 'Undo — mark as not done yet', icon: Icons.undo_rounded, onTap: _busy ? null : () => _run(() => context.appRead.staffUndo(s.id))),
       children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Pill(switch (s.status) {
-            StopStatus.delivered => 'Delivered · Prepaid',
-            StopStatus.exception => 'Exception recorded',
-            StopStatus.scheduled => 'Scheduled · Prepaid',
-          }, bg: s.status == StopStatus.exception ? AppColors.pink : AppColors.mint, fg: s.status == StopStatus.exception ? AppColors.berry : AppColors.teal),
-        ),
+        Row(children: [
+          Pill(s.isPending ? 'To deliver' : s.statusLabel, bg: s.isDelivered ? AppColors.mint : (s.isException ? AppColors.pink : AppColors.yellowSoft), fg: s.isException ? AppColors.berry : AppColors.teal),
+          const Spacer(),
+          Text(s.subscriptionNumber, style: T.tiny()),
+        ]),
+        const Gap(10),
+        Text(s.customerName, style: T.display(34)),
+        Text('${s.address} · ${s.pincode}', style: T.body()),
         const Gap(12),
-        Text(s.name, style: T.display(36)),
-        const Gap(6),
-        Text('${s.address}\nMorning window · 6:00–7:00 AM', style: T.sans(12, color: AppColors.muted, height: 1.6)),
+        Row(children: [
+          Expanded(child: OutlineBtn('Call', icon: Icons.call_outlined, color: AppColors.teal, onTap: () => _open(context, Uri.parse('tel:${s.phone}')))),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlineBtn('Directions', icon: Icons.near_me_outlined, color: AppColors.teal, onTap: () => _open(context, Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent('${s.address}, ${s.pincode}')}'))),
+          ),
+        ]),
         const Gap(14),
         ColorBlock(
           color: AppColors.teal,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('TODAY’S  DELIVERY', style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w700, spacing: 1.2)),
-            const Gap(10),
-            Text('${s.litres} L', style: T.display(52, color: AppColors.white)),
-            Text('Full Cream Milk · ${s.litres} × 1 L bottle${s.litres == 1 ? '' : 's'}\nCharge after delivery: ${rupees(s.charge)}', style: T.sans(11.5, color: AppColors.white, height: 1.6)),
+          child: Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${s.litres} L', style: T.display(40, color: AppColors.white)),
+                Text('${s.slotLabel} · ${money(s.amount)}', style: T.sans(11.5, color: AppColors.white)),
+              ]),
+            ),
+            const Icon(Icons.local_drink_rounded, color: AppColors.white, size: 40),
           ]),
         ),
+        if (s.customerNote != null && s.customerNote!.isNotEmpty) ...[const Gap(10), Note('Customer note: ${s.customerNote}', tone: NoteTone.mint)],
+        if (s.note != null && s.note!.isNotEmpty) ...[const Gap(10), Note('Your note: ${s.note}')],
         const Gap(10),
         UCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Delivery note', style: T.display(25)),
-            const Gap(6),
-            Text(s.note, style: T.sans(12)),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Column(children: [
+            KV('Milk balance', money(s.balance), color: s.lowBalance ? AppColors.berry : null),
+            if (s.deliveredAt != null) KV('Delivered at', _clock(s.deliveredAt!)),
+            if (s.bottlesBack > 0) KV('Empty bottles collected', '${s.bottlesBack}'),
           ]),
         ),
+        if (s.lowBalance) ...[const Gap(8), const Note('Balance is low — remind the customer to top up, or collect cash.')],
         const Gap(10),
-        KV('Empty bottles expected', '${s.bottles} bottle${s.bottles == 1 ? '' : 's'}'),
-        const KV('Customer balance', 'Sufficient', color: AppColors.teal),
-        if (!done)
-          ActionRow(
-            icon: Icons.priority_high_rounded,
-            title: 'Unable to deliver?',
-            subtitle: 'Record an exception and reason',
-            onTap: () => go(context, R.staffException, args: s.number),
-          ),
-        const FinePrint('Confirm the actual quantity and delivery proof on the next screen.'),
+        ActionRow(
+          icon: Icons.payments_outlined,
+          title: 'Record cash payment',
+          subtitle: 'Added to the customer’s milk balance',
+          onTap: _busy
+              ? null
+              : () async {
+                  final amt = await _askNumber(context, title: 'Cash collected', label: 'Amount (₹)', hint: 'From ${s.customerName}.');
+                  if (amt != null && amt > 0 && context.mounted) _run(() => context.appRead.staffCash(s.id, amt.toDouble()));
+                },
+          divider: false,
+        ),
       ],
     );
   }
 }
 
-// ───────────────────────── 39 · Confirm milk delivery ─────────────────────────
+// ───────────────────────── 39 · Confirm delivery ─────────────────────────
 class StaffConfirmScreen extends StatefulWidget {
   final int? stopNumber;
   const StaffConfirmScreen({super.key, this.stopNumber});
@@ -270,89 +400,67 @@ class StaffConfirmScreen extends StatefulWidget {
 }
 
 class _StaffConfirmScreenState extends State<StaffConfirmScreen> {
-  late final DeliveryStop s = context.appRead.stopByNumber(widget.stopNumber);
-  late String _qty = '${s.litres} L · Full delivery';
-  late int _bottles = s.bottles;
+  int _bottles = 0;
+  final _note = TextEditingController();
+  bool _busy = false;
 
-  int get _deliveredLitres => int.tryParse(_qty.split(' ').first) ?? s.litres;
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirm(MilkStop s) async {
+    setState(() => _busy = true);
+    try {
+      final msg = await context.appRead.staffDeliver(s.id, bottlesBack: _bottles, note: _note.text.trim());
+      if (!mounted) return;
+      HapticFeedback.mediumImpact();
+      toast(context, msg);
+      final next = context.appRead.staffDay?.next;
+      final nav = Navigator.of(context);
+      nav.popUntil((r) => r.settings.name == R.staffRoute || r.settings.name == R.staffDashboard || r.isFirst);
+      if (next != null) nav.pushNamed(R.staffStop, arguments: next.id);
+    } catch (e) {
+      if (mounted) _err(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final charge = _deliveredLitres * Milk.pricePerLitre;
-    final qtyOptions = [for (var l = s.litres; l >= 1; l--) '$l L · ${l == s.litres ? 'Full' : 'Partial'} delivery'];
+    final s = context.app.staffDay?.stopById(widget.stopNumber);
+    if (s == null) return UScaffold(title: 'Confirm delivery', subtitle: _subtitle, trailing: null, children: const [LoadState(empty: 'Stop not found.')]);
     return UScaffold(
-      title: 'Freshness delivered',
-      subtitle: _staffSubtitle,
-      nav: NavKind.staff,
-      navIndex: 2,
+      title: 'Confirm delivery',
+      subtitle: _subtitle,
       trailing: null,
-      bottom: PrimaryButton(
-        'Confirm delivery · ${rupees(charge)}',
-        color: AppColors.teal,
-        onTap: () async {
-          await showProcessing(context, 'Saving delivery…', duration: const Duration(milliseconds: 700));
-          if (!context.mounted) return;
-          context.appRead.markDelivered(s, bottles: _bottles);
-          HapticFeedback.mediumImpact();
-          final next = context.appRead.nextStop;
-          await showSuccess(context,
-              title: 'Delivered to ${s.name.split(' ').first}',
-              message: next == null ? 'That was the last stop. Time to close your shift.' : 'Next up: ${next.name} · ${next.litres} L',
-              cta: next == null ? 'Shift summary' : 'Next stop');
-          if (!context.mounted) return;
-          final nav = Navigator.of(context);
-          if (next == null) {
-            nav.pushNamedAndRemoveUntil(R.staffSummary, (_) => false, arguments: kTabSwitch);
-          } else {
-            nav.pushNamedAndRemoveUntil(R.staffStop, (r) => r.isFirst, arguments: next.number);
-          }
-        },
-      ),
+      bottom: PrimaryButton(_busy ? 'Saving…' : 'Confirm ${s.litres} L delivered', color: AppColors.teal, icon: Icons.check_rounded, onTap: _busy ? null : () => _confirm(s)),
       children: [
-        const Eyebrow('Delivery confirmation'),
-        const Gap(10),
-        const Headline('Every litre.\n*Properly recorded.*'),
+        Text(s.customerName, style: T.display(32)),
+        Text(s.address, style: T.body()),
         const Gap(16),
         ColorBlock(
-          color: AppColors.teal,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(s.name, style: T.display(26, color: AppColors.white)),
-            const Gap(6),
-            Text('${s.address.split(',').take(2).join(',')} · Scheduled ${s.litres} L', style: T.sans(11.5, color: AppColors.white)),
+          color: AppColors.mint,
+          child: Row(children: [
+            const Icon(Icons.local_drink_rounded, color: AppColors.teal, size: 30),
+            const SizedBox(width: 12),
+            Expanded(child: Text('${s.litres} L handed over · ${money(s.amount)} charged to their milk balance', style: T.sans(12.5, color: AppColors.teal, weight: FontWeight.w600))),
           ]),
         ),
-        UPicker(
-          label: 'Quantity actually delivered',
-          value: _qty,
-          onTap: () async {
-            final v = await pickOption(context, title: 'Quantity delivered', options: qtyOptions, selected: _qty);
-            if (v != null) setState(() => _qty = v);
-          },
-        ),
-        const UField(label: 'Customer delivery OTP', initial: '2468', keyboard: TextInputType.number),
-        UPicker(
-          label: 'Empty bottles collected',
-          value: '$_bottles bottle${_bottles == 1 ? '' : 's'}',
-          onTap: () async {
-            final v = await pickOption(context, title: 'Empty bottles collected', options: const ['0 bottles', '1 bottle', '2 bottles', '3 bottles', '4 bottles'], selected: '$_bottles bottle${_bottles == 1 ? '' : 's'}');
-            if (v != null) setState(() => _bottles = int.parse(v.split(' ').first));
-          },
-        ),
-        const UField(label: 'Delivery note', initial: 'Handed to customer at the door.'),
-        const Gap(14),
-        Note(
-          _deliveredLitres == s.litres
-              ? 'Full delivery: ${rupees(charge)} will be debited from the customer’s prepaid milk balance. Partial deliveries use the actual delivered quantity.'
-              : 'Partial delivery: only ${rupees(charge)} for $_deliveredLitres L will be debited. The shortfall is flagged for the dairy team.',
-          tone: NoteTone.mint,
-        ),
-        const FinePrint('Prototype confirmation only. No customer balance is changed.'),
+        const Gap(16),
+        Row(children: [
+          Expanded(child: Text('Empty bottles collected', style: T.sans(13, weight: FontWeight.w600))),
+          QtyStepper(value: _bottles, min: 0, max: 20, onChanged: (v) => setState(() => _bottles = v)),
+        ]),
+        UField(label: 'Note (optional)', controller: _note, hint: 'e.g. left with neighbour'),
       ],
     );
   }
 }
 
-// ───────────────────────── 40 · Delivery exception ─────────────────────────
+// ───────────────────────── 40 · Not delivered ─────────────────────────
 class StaffExceptionScreen extends StatefulWidget {
   final int? stopNumber;
   const StaffExceptionScreen({super.key, this.stopNumber});
@@ -362,66 +470,78 @@ class StaffExceptionScreen extends StatefulWidget {
 }
 
 class _StaffExceptionScreenState extends State<StaffExceptionScreen> {
-  late final DeliveryStop s = context.appRead.stopByNumber(widget.stopNumber);
-  String _reason = 'Customer unavailable';
-  String _action = 'Hold for team review';
+  String? _reason;
+  final _note = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save(MilkStop s) async {
+    if (_reason == null) {
+      toast(context, 'Choose what happened');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final msg = await context.appRead.staffException(s.id, reason: _reason!, note: _note.text.trim());
+      if (!mounted) return;
+      toast(context, msg);
+      Navigator.of(context).popUntil((r) => r.settings.name == R.staffRoute || r.settings.name == R.staffDashboard || r.isFirst);
+    } catch (e) {
+      if (mounted) _err(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final day = context.app.staffDay;
+    final s = day?.stopById(widget.stopNumber);
+    if (s == null || day == null) return UScaffold(title: 'Not delivered', subtitle: _subtitle, trailing: null, children: const [LoadState(empty: 'Stop not found.')]);
     return UScaffold(
-      title: 'A little change of plan',
-      subtitle: _staffSubtitle,
-      nav: NavKind.staff,
-      navIndex: 2,
+      title: 'Not delivered',
+      subtitle: _subtitle,
       trailing: null,
-      bottom: PrimaryButton(
-        'Save exception & continue',
-        color: AppColors.teal,
-        onTap: () {
-          context.appRead.markException(s);
-          toast(context, 'Exception saved for stop ${s.number}');
-          Navigator.of(context).pushNamedAndRemoveUntil(R.staffRoute, (_) => false, arguments: kTabSwitch);
-        },
-      ),
+      bottom: PrimaryButton(_busy ? 'Saving…' : 'Save — no charge', onTap: _busy ? null : () => _save(s)),
       children: [
-        const Eyebrow('Unable to complete delivery'),
-        const Gap(10),
-        const Headline('Keep the team\n*in the loop.*'),
-        const Gap(16),
-        UCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${s.name} · ${s.litres} L', style: T.display(25)),
-            const Gap(4),
-            Text('Stop ${s.number} · Patel Nagar', style: T.sans(12)),
-          ]),
-        ),
-        UPicker(
-          label: 'Reason',
-          value: _reason,
-          onTap: () async {
-            final v = await pickOption(context,
-                title: 'Reason', options: const ['Customer unavailable', 'Address not found', 'Customer refused', 'Short stock in van', 'Other'], selected: _reason);
-            if (v != null) setState(() => _reason = v);
-          },
-        ),
-        UPicker(
-          label: 'Action',
-          value: _action,
-          onTap: () async {
-            final v = await pickOption(context, title: 'Action', options: const ['Hold for team review', 'Retry later today', 'Leave with neighbour', 'Return to dairy'], selected: _action);
-            if (v != null) setState(() => _action = v);
-          },
-        ),
-        const UField(label: 'Notes', initial: 'Customer not available at the door. Team to confirm whether a retry is required.', maxLines: 3),
+        Text(s.customerName, style: T.display(30)),
+        Text(s.address, style: T.body()),
         const Gap(14),
-        const Note('Undelivered quantities are not charged. A partial delivery must record the actual delivered quantity.'),
-        const FinePrint('Exception reports are visible to the dairy team for follow-up.'),
+        const FieldLabel('What happened?'),
+        for (final r in day.exceptionReasons)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: _reason == r.key ? AppColors.pink : AppColors.surface,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: _reason == r.key ? AppColors.berry : AppColors.border)),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => setState(() => _reason = r.key),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(children: [
+                    Icon(_reason == r.key ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, size: 20, color: AppColors.berry),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(r.label, style: T.sans(13, weight: FontWeight.w600))),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        UField(label: 'Note for the shop (optional)', controller: _note, maxLines: 2),
+        const Gap(10),
+        const Note('The customer is not charged, and the shop sees this straight away.'),
       ],
     );
   }
 }
 
-// ───────────────────────── 41 · Bottle returns & stock ─────────────────────────
+// ───────────────────────── 41 · Milk & bottles ─────────────────────────
 class StaffStockScreen extends StatefulWidget {
   const StaffStockScreen({super.key});
 
@@ -429,130 +549,127 @@ class StaffStockScreen extends StatefulWidget {
   State<StaffStockScreen> createState() => _StaffStockScreenState();
 }
 
-class _StaffStockScreenState extends State<StaffStockScreen> {
-  String? _customer;
-  String _adjustment = 'No adjustment';
-  final _qty = TextEditingController(text: '2');
-
-  @override
-  void dispose() {
-    _qty.dispose();
-    super.dispose();
-  }
-
+class _StaffStockScreenState extends _DayState<StaffStockScreen> {
   @override
   Widget build(BuildContext context) {
+    if (_needsStaff(context)) return const Scaffold(backgroundColor: AppColors.cream);
     final app = context.app;
-    final customers = app.route.where((s) => s.status == StopStatus.delivered).map((s) => '${s.name} · ${s.bottles} bottle${s.bottles == 1 ? '' : 's'}').toList();
-    final customer = _customer ?? (customers.isNotEmpty ? customers.last : 'No deliveries yet');
-    final pending = (app.route.where((s) => s.status == StopStatus.delivered).fold<int>(0, (a, s) => a + s.bottles) + 12 - app.bottlesCollected).clamp(0, 999);
+    final wait = loader('Milk & bottles');
+    if (wait != null) return wait;
+    final day = app.staffDay!;
+    final remaining = day.litresLoaded - day.sum('litres_delivered');
     return UScaffold(
-      title: 'Keep every bottle counted',
-      subtitle: _staffSubtitle,
+      title: 'Milk & bottles',
+      subtitle: _subtitle,
       nav: NavKind.staff,
-      navIndex: 2,
+      navIndex: app.isDeliveryStaff ? 0 : 2,
       trailing: null,
-      bottom: PrimaryButton(
-        'Save stock record',
-        color: AppColors.teal,
-        onTap: () {
-          final n = int.tryParse(_qty.text) ?? 0;
-          context.appRead.recordBottles(n);
-          toast(context, 'Stock record saved · $n bottles');
-          goTab(context, R.staffSummary);
-        },
-      ),
       children: [
-        const Eyebrow('Route A · Stock reconciliation'),
+        StatPair(StatCard('${day.litresLoaded} L', 'Loaded', valueColor: AppColors.ink), StatCard('${day.sum('litres_delivered')} L', 'Delivered', valueColor: AppColors.teal)),
         const Gap(10),
-        const Headline('A complete round.\n*Nothing missed.*'),
-        const Gap(16),
-        StatPair(StatCard('${app.assignedLitres} L', 'Loaded at the dairy'), StatCard('${app.deliveredLitres} L', 'Delivered so far')),
-        const Gap(10),
+        StatPair(StatCard('${remaining < 0 ? 0 : remaining} L', 'Still on the van', valueColor: AppColors.ink), StatCard('${day.sum('bottles_back')}', 'Empties collected', valueColor: AppColors.teal)),
+        const Gap(14),
         UCard(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Column(children: [
-            KV('Remaining milk', '${app.assignedLitres - app.deliveredLitres} L'),
-            KV('Empty bottles collected', '${app.bottlesCollected}'),
-            KV('Bottles pending collection', '$pending'),
+            KV('Planned for today', '${day.sum('litres_planned')} L · ${day.stops.length} stops'),
+            KV('Not delivered', '${day.sum('exceptions')} stops'),
+            KV('Bottles handed out', '${day.sum('bottles_out')}'),
           ]),
         ),
-        UPicker(
-          label: 'Record bottle return',
-          value: customer,
+        const Gap(12),
+        OutlineBtn(
+          'Update litres loaded',
+          icon: Icons.edit_outlined,
+          color: AppColors.teal,
           onTap: () async {
-            if (customers.isEmpty) return;
-            final v = await pickOption(context, title: 'Customer', options: customers.reversed.toList(), selected: customer);
-            if (v != null) setState(() => _customer = v);
+            final n = await _askNumber(context, title: 'Litres loaded', label: 'Litres', initial: day.litresLoaded);
+            if (n == null || !context.mounted) return;
+            try {
+              await context.appRead.staffStartShift(litresLoaded: n, bottlesLoaded: n);
+            } catch (e) {
+              if (context.mounted) _err(context, e);
+            }
           },
         ),
-        UField(label: 'Quantity collected', controller: _qty, keyboard: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly]),
-        UPicker(
-          label: 'Stock adjustment',
-          value: _adjustment,
-          onTap: () async {
-            final v = await pickOption(context, title: 'Stock adjustment', options: const ['No adjustment', 'Bottle damaged', 'Milk spoiled', 'Extra milk issued'], selected: _adjustment);
-            if (v != null) setState(() => _adjustment = v);
-          },
-        ),
-        const FinePrint('Stock adjustments require a reason and remain visible in the shift summary.'),
       ],
     );
   }
 }
 
-// ───────────────────────── 42 · End-of-route summary ─────────────────────────
-class StaffSummaryScreen extends StatelessWidget {
+// ───────────────────────── 42 · Round summary ─────────────────────────
+class StaffSummaryScreen extends StatefulWidget {
   const StaffSummaryScreen({super.key});
 
   @override
+  State<StaffSummaryScreen> createState() => _StaffSummaryScreenState();
+}
+
+class _StaffSummaryScreenState extends _DayState<StaffSummaryScreen> {
+  final _note = TextEditingController();
+  int? _empties;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _finish(StaffMilkDay day) async {
+    if (day.sum('pending') > 0) {
+      final ok = await confirmDialog(context, title: '${day.sum('pending')} stops not done', message: 'Finish anyway? Those customers will show as not visited until you mark them.', confirm: 'Finish round', color: AppColors.teal);
+      if (!ok || !mounted) return;
+    }
+    setState(() => _busy = true);
+    try {
+      await context.appRead.staffEndShift(bottlesReturned: _empties ?? day.sum('bottles_back'), note: _note.text.trim());
+      if (mounted) toast(context, 'Round finished — the shop can see your summary');
+    } catch (e) {
+      if (mounted) _err(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_needsStaff(context)) return const Scaffold(backgroundColor: AppColors.cream);
     final app = context.app;
-    final returned = app.assignedLitres - app.deliveredLitres;
+    final wait = loader('Round summary', navIndex: app.isDeliveryStaff ? 2 : 2);
+    if (wait != null) return wait;
+    final day = app.staffDay!;
+    final finished = day.shiftEnded != null;
+    final empties = _empties ?? (finished ? day.bottlesReturned : day.sum('bottles_back'));
     return UScaffold(
-      title: 'A morning well delivered',
-      subtitle: _staffSubtitle,
+      title: 'Round summary',
+      subtitle: _subtitle,
       nav: NavKind.staff,
       navIndex: 2,
       trailing: null,
-      bottom: PrimaryButton(
-        'Submit shift preview',
-        color: AppColors.teal,
-        onTap: () async {
-          await showProcessing(context, 'Submitting shift…', duration: const Duration(milliseconds: 900));
-          if (!context.mounted) return;
-          await showSuccess(context, title: 'Shift submitted', message: 'The dairy team will reconcile your record. Thank you for a lovely morning, Ravi.', cta: 'Finish');
-          if (context.mounted) goTab(context, R.staffOrders);
-        },
-      ),
+      bottom: PrimaryButton(_busy ? 'Saving…' : (finished ? 'Update summary' : 'Finish my round'), color: AppColors.teal, onTap: _busy ? null : () => _finish(day)),
       children: [
-        const Center(child: CheckBadge(icon: Icons.local_drink_rounded)),
+        Eyebrow('${day.route.name} · ${dayMonth(day.date)}'),
         const Gap(10),
-        const Eyebrow('Route A · Shift summary', align: TextAlign.center),
+        Text(finished ? 'Round finished at ${_clock(day.shiftEnded!)}' : 'Wrapping up', style: T.display(30)),
+        const Gap(14),
+        StatPair(StatCard('${day.sum('delivered')}', 'Delivered', valueColor: AppColors.teal), StatCard('${day.sum('exceptions')}', 'Not delivered')),
         const Gap(10),
-        const Headline('Fresh starts.\n*Happy homes.*', align: TextAlign.center),
-        const Gap(16),
-        StatPair(StatCard('${app.completedStops}', 'Completed stops'), StatCard('${app.deliveredLitres} L', 'Milk delivered')),
+        StatPair(StatCard('${day.sum('litres_delivered')} L', 'Milk delivered', valueColor: AppColors.ink), StatCard(money(day.amountOf('cash_collected')), 'Cash collected', valueColor: AppColors.teal)),
+        const Gap(14),
+        if (day.exceptionCounts.isNotEmpty)
+          UCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Column(children: [for (final (reason, n) in day.exceptionCounts) KV(reason, '$n')]),
+          ),
         const Gap(10),
-        UCard(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Column(children: [
-            KV('Assigned milk', '${app.assignedLitres} L'),
-            KV('Delivered', '${app.deliveredLitres} L'),
-            KV('Returned to dairy', '$returned L'),
-            KV('Delivery exceptions', '${app.exceptionStops} stop${app.exceptionStops == 1 ? '' : 's'}'),
-            KV('Milk charges recorded', rupees(app.chargesRecorded)),
-            KV('Empty bottles collected', '${app.bottlesCollected}'),
-          ]),
-        ),
-        const Gap(12),
-        Note(
-          app.pendingStops.isNotEmpty
-              ? 'Review: ${app.pendingStops.length} stop${app.pendingStops.length == 1 ? '' : 's'} still scheduled and $returned L not yet delivered. Finish the route or record exceptions before submitting.'
-              : 'Review: ${app.exceptionStops} undelivered stop${app.exceptionStops == 1 ? '' : 's'} and $returned L returned milk. The dairy team will reconcile the shift record.',
-          tone: NoteTone.mint,
-        ),
-        const FinePrint('Final shift example. No charges are collected or records submitted in this design prototype.'),
+        Row(children: [
+          Expanded(child: Text('Empty bottles returned to the shop', style: T.sans(13, weight: FontWeight.w600))),
+          QtyStepper(value: empties, min: 0, max: 500, onChanged: (v) => setState(() => _empties = v)),
+        ]),
+        UField(label: 'Note for the shop (optional)', controller: _note, maxLines: 2),
+        const Gap(10),
+        if (app.isDeliveryStaff) Center(child: TextButton(onPressed: () => staffSignOut(context), child: Text('Sign out', style: T.sans(12.5, color: AppColors.muted)))),
       ],
     );
   }

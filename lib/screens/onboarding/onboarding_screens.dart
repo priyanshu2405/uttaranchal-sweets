@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,6 +7,7 @@ import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../data/api.dart';
 import '../../data/catalog.dart';
+import '../../data/location.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../../widgets/feedback.dart';
@@ -42,7 +44,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     final app = context.app;
-    final hindi = app.language == 'हिन्दी';
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: AppTheme.overlay,
       child: Scaffold(
@@ -60,10 +61,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       Column(children: [
                         // Long-press the logo to open the screen index (handy while testing).
                         GestureDetector(
-                          onLongPress: () {
-                            HapticFeedback.heavyImpact();
-                            go(context, R.screenIndex);
-                          },
+                          // Screen index is a developer tool — only in debug builds.
+                          onLongPress: kDebugMode
+                              ? () {
+                                  HapticFeedback.heavyImpact();
+                                  go(context, R.screenIndex);
+                                }
+                              : null,
                           child: const BrandLogo(),
                         ),
                         const SizedBox(height: 22),
@@ -77,8 +81,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         const SizedBox(height: 10),
                         Text('घर जैसा स्वाद, हर दिन', style: T.deva(13, color: AppColors.ink)),
                         const SizedBox(height: 4),
-                        Text(hindi ? 'मिठाई, ताज़ा दूध और रोज़ की खुशियाँ।' : 'Sweets, fresh milk & everyday happiness.',
-                            style: hindi ? T.deva(12.5, color: AppColors.ink) : T.sans(12.5, color: AppColors.ink)),
+                        Text('Sweets, fresh milk & everyday happiness.', style: T.sans(12.5, color: AppColors.ink)),
                       ]),
                       Column(children: [
                         const SizedBox(height: 24),
@@ -88,20 +91,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           OutlineBtn('Try again', icon: Icons.refresh_rounded, onTap: () => context.appRead.init()),
                         ] else
                           PrimaryButton(
-                            app.ready ? (hindi ? 'शुरू करें' : 'Let’s begin') : 'Opening the shop…',
+                            app.ready ? 'Let’s begin' : 'Opening the shop…',
                             icon: app.ready ? Icons.north_east_rounded : null,
                             onTap: app.ready ? () => go(context, app.signedIn ? R.home : R.signIn) : null,
                           ),
                         const SizedBox(height: 14),
-                        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          _LangLink('English', active: !hindi, onTap: () => context.appRead.setLanguage('English')),
-                          Text('   ·   ', style: T.sans(11, color: AppColors.berry)),
-                          _LangLink('हिन्दी', active: hindi, onTap: () => context.appRead.setLanguage('हिन्दी')),
-                        ]),
-                        const SizedBox(height: 10),
                         TextButton(
-                          onPressed: () => go(context, app.staffSignedIn ? R.staffOrders : R.staffSignIn),
-                          child: Text('Shop staff? Staff sign in', style: T.sans(11, color: AppColors.ink, weight: FontWeight.w500).copyWith(decoration: TextDecoration.underline)),
+                          onPressed: () => go(context, app.staffSignedIn ? app.staffHome : R.staffSignIn),
+                          child: Text('Staff sign in', style: T.sans(11, color: AppColors.ink, weight: FontWeight.w500).copyWith(decoration: TextDecoration.underline)),
                         ),
                       ]),
                     ],
@@ -112,23 +109,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _LangLink extends StatelessWidget {
-  final String text;
-  final bool active;
-  final VoidCallback onTap;
-  const _LangLink(this.text, {required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDeva = text.codeUnitAt(0) > 0x0900;
-    final base = isDeva ? T.deva(12, color: AppColors.berry) : T.sans(11.5, color: AppColors.berry);
-    return GestureDetector(
-      onTap: onTap,
-      child: Text(text, style: base.copyWith(fontWeight: active ? FontWeight.w700 : FontWeight.w400, decoration: active ? TextDecoration.underline : null)),
     );
   }
 }
@@ -423,6 +403,32 @@ class _LocationScreenState extends State<LocationScreen> {
   late final _city = TextEditingController(text: context.appRead.city);
   String? _pinMessage;
   bool? _local;
+  bool _locating = false;
+
+  Future<void> _useCurrentLocation() async {
+    setState(() => _locating = true);
+    try {
+      final a = await detectCurrentAddress();
+      if (!mounted) return;
+      setState(() {
+        if (a.pincode.isNotEmpty) _pin.text = a.pincode;
+        if (a.street.isNotEmpty) _street.text = a.street;
+        if (a.city.isNotEmpty) _city.text = a.city;
+      });
+      toast(context, 'Address found — please add your house / flat number');
+      if (_pin.text.length == 6) _check();
+    } on LocationProblem catch (e) {
+      if (!mounted) return;
+      toast(
+        context,
+        e.message,
+        action: e.openAppSettings || e.openLocationSettings ? 'Settings' : null,
+        onAction: e.openAppSettings ? openAppPermissionSettings : (e.openLocationSettings ? openPhoneLocationSettings : null),
+      );
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
 
   @override
   void initState() {
@@ -481,6 +487,13 @@ class _LocationScreenState extends State<LocationScreen> {
         const Headline('Where shall we\nbring the *sweetness?*'),
         const Gap(16),
         const RouteMap(height: 140),
+        const Gap(14),
+        OutlineBtn(
+          _locating ? 'Finding your location…' : 'Use my current location',
+          icon: Icons.my_location_rounded,
+          color: AppColors.teal,
+          onTap: _locating ? null : _useCurrentLocation,
+        ),
         UField(
           label: 'Pincode',
           controller: _pin,

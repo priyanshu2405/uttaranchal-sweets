@@ -29,6 +29,13 @@ Future<void> staffSignOut(BuildContext context) async {
 
 /// Redirects to staff sign-in when the staff token is missing or expired.
 bool _needsLogin(BuildContext context) {
+  if (context.appRead.staffSignedIn && context.appRead.isDeliveryStaff) {
+    // Delivery staff only have the milk round.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) goTab(context, R.staffDashboard);
+    });
+    return true;
+  }
   if (context.appRead.staffSignedIn) return false;
   WidgetsBinding.instance.addPostFrameCallback((_) {
     if (context.mounted) Navigator.of(context).pushNamedAndRemoveUntil(R.staffSignIn, (r) => r.isFirst);
@@ -65,7 +72,7 @@ class _StaffSignInScreenState extends State<StaffSignInScreen> {
     setState(() => _busy = true);
     try {
       await context.appRead.staffLogin(_email.text.trim(), _password.text);
-      if (mounted) goTab(context, R.staffOrders);
+      if (mounted) goTab(context, context.appRead.staffHome);
     } on ApiException catch (e) {
       if (mounted) toast(context, e.message);
     } finally {
@@ -89,14 +96,14 @@ class _StaffSignInScreenState extends State<StaffSignInScreen> {
         ColorBlock(
           color: AppColors.teal,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Website + app orders', style: T.display(25, color: AppColors.white)),
+            Text('Orders & milk rounds', style: T.display(25, color: AppColors.white)),
             const Gap(8),
-            Text('Sign in with the same email and password you use for the website admin panel.', style: T.sans(11.5, color: AppColors.white)),
+            Text('Shop admins: use your admin panel email and password. Delivery staff: use the account the shop created for you.', style: T.sans(11.5, color: AppColors.white)),
           ]),
         ),
         UField(label: 'Staff email', controller: _email, keyboard: TextInputType.emailAddress),
         UField(label: 'Password', controller: _password, obscure: true, onSubmitted: (_) => _submit()),
-        const FinePrint('Staff accounts are managed in the website admin under Staff.'),
+        const FinePrint('Staff accounts are managed in the website admin under Admin → Staff.'),
       ],
     );
   }

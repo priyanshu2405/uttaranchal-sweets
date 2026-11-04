@@ -484,3 +484,364 @@ class StaffProduct {
 
   factory StaffProduct.fromJson(Map<String, dynamic> j) => StaffProduct(Product.fromJson(j), j['is_active'] != false, _i(j['raw_stock_qty']));
 }
+
+// ───────────────────────── Milk subscriptions (server: app/Http/Controllers/Api/MilkController.php) ─────────────────────────
+
+class MilkConfig {
+  final String productName;
+  final double pricePerLitre;
+  final int maxLitres;
+  final List<KeyLabel> slots;
+  final List<KeyLabel> frequencies;
+  final int cutoffHour;
+  final int firstPaymentDays;
+  final double minTopup;
+  final bool allowCash;
+  final bool onlinePayments;
+
+  const MilkConfig({
+    this.productName = 'Full Cream Milk',
+    this.pricePerLitre = 68,
+    this.maxLitres = 10,
+    this.slots = const [],
+    this.frequencies = const [KeyLabel('daily', 'Every day'), KeyLabel('alternate', 'Alternate days'), KeyLabel('custom', 'Select days')],
+    this.cutoffHour = 20,
+    this.firstPaymentDays = 30,
+    this.minTopup = 100,
+    this.allowCash = true,
+    this.onlinePayments = false,
+  });
+
+  factory MilkConfig.fromJson(Map<String, dynamic> j) => MilkConfig(
+        productName: _s(j['product_name']) ?? 'Full Cream Milk',
+        pricePerLitre: _d(j['price_per_litre']),
+        maxLitres: _i(j['max_litres']) ?? 10,
+        slots: _list(j['slots']).map((e) => KeyLabel(_s(e['key']) ?? '', _s(e['label']) ?? '')).toList(),
+        frequencies: _list(j['frequencies']).map((e) => KeyLabel(_s(e['key']) ?? '', _s(e['label']) ?? '')).toList(),
+        cutoffHour: _i(j['cutoff_hour']) ?? 20,
+        firstPaymentDays: _i(j['first_payment_days']) ?? 30,
+        minTopup: _d(j['min_topup']),
+        allowCash: j['allow_cash'] != false,
+        onlinePayments: j['online_payments'] == true,
+      );
+
+  String slotLabel(String? key) {
+    for (final s in slots) {
+      if (s.key == key) return s.label;
+    }
+    return key ?? '';
+  }
+
+  String frequencyLabel(String? key) {
+    for (final f in frequencies) {
+      if (f.key == key) return f.label;
+    }
+    return key ?? '';
+  }
+
+  String get cutoffText => '${cutoffHour % 12 == 0 ? 12 : cutoffHour % 12} ${cutoffHour < 12 ? 'AM' : 'PM'}';
+}
+
+class MilkDay {
+  final DateTime date;
+  final String state; // delivered | not_delivered | scheduled | skipped | none
+  final bool inPattern;
+  final bool canChange;
+  final int? deliveryId;
+  const MilkDay(this.date, this.state, this.inPattern, this.canChange, this.deliveryId);
+}
+
+class MilkDeliveryInfo {
+  final int id;
+  final DateTime date;
+  final int litres;
+  final double amount;
+  final String status; // scheduled | delivered | exception
+  final String statusLabel;
+  final String? exceptionReason;
+  final String? note;
+  final DateTime? deliveredAt;
+  final String? deliveredBy;
+  final int bottlesBack;
+
+  const MilkDeliveryInfo({
+    required this.id,
+    required this.date,
+    required this.litres,
+    required this.amount,
+    required this.status,
+    required this.statusLabel,
+    this.exceptionReason,
+    this.note,
+    this.deliveredAt,
+    this.deliveredBy,
+    this.bottlesBack = 0,
+  });
+
+  factory MilkDeliveryInfo.fromJson(Map<String, dynamic> j) => MilkDeliveryInfo(
+        id: _i(j['id']) ?? 0,
+        date: DateTime.tryParse('${j['date']}') ?? DateTime.now(),
+        litres: _i(j['litres']) ?? 0,
+        amount: _d(j['amount']),
+        status: _s(j['status']) ?? 'scheduled',
+        statusLabel: _s(j['status_label']) ?? '',
+        exceptionReason: _s(j['exception_reason']),
+        note: _s(j['note']),
+        deliveredAt: _date(j['delivered_at']),
+        deliveredBy: _s(j['delivered_by']),
+        bottlesBack: _i(j['bottles_back']) ?? 0,
+      );
+}
+
+class MilkTransaction {
+  final String type;
+  final double amount;
+  final double? balanceAfter;
+  final String description;
+  final DateTime? createdAt;
+  const MilkTransaction(this.type, this.amount, this.balanceAfter, this.description, this.createdAt);
+}
+
+/// The customer's milk plan as stored on the server.
+class MilkPlan {
+  final int id;
+  final String number;
+  final String status; // pending_payment | active | paused | cancelled
+  final String statusLabel;
+  final String productName;
+  final int litres;
+  final double perDelivery;
+  final String frequency;
+  final String frequencyLabel;
+  final List<int> weekdays;
+  final DateTime startDate;
+  final String slot;
+  final String slotLabel;
+  final String address;
+  final String pincode;
+  final bool reminders;
+  final double balance;
+  final bool lowBalance;
+  final double firstPayment;
+  final int deliveriesFirstPeriod;
+  final DateTime? nextDelivery;
+  final MilkDeliveryInfo? today;
+  final List<MilkDay> calendar;
+  final List<MilkDeliveryInfo> recentDeliveries;
+  final List<MilkTransaction> transactions;
+
+  const MilkPlan({
+    required this.id,
+    required this.number,
+    required this.status,
+    required this.statusLabel,
+    required this.productName,
+    required this.litres,
+    required this.perDelivery,
+    required this.frequency,
+    required this.frequencyLabel,
+    required this.weekdays,
+    required this.startDate,
+    required this.slot,
+    required this.slotLabel,
+    required this.address,
+    required this.pincode,
+    required this.reminders,
+    required this.balance,
+    required this.lowBalance,
+    required this.firstPayment,
+    required this.deliveriesFirstPeriod,
+    this.nextDelivery,
+    this.today,
+    required this.calendar,
+    required this.recentDeliveries,
+    required this.transactions,
+  });
+
+  factory MilkPlan.fromJson(Map<String, dynamic> j) => MilkPlan(
+        id: _i(j['id']) ?? 0,
+        number: _s(j['number']) ?? '',
+        status: _s(j['status']) ?? 'pending_payment',
+        statusLabel: _s(j['status_label']) ?? '',
+        productName: _s(j['product_name']) ?? 'Full Cream Milk',
+        litres: _i(j['litres']) ?? 1,
+        perDelivery: _d(j['per_delivery']),
+        frequency: _s(j['frequency']) ?? 'daily',
+        frequencyLabel: _s(j['frequency_label']) ?? '',
+        weekdays: (j['weekdays'] as List? ?? const []).map((e) => _i(e) ?? 0).where((e) => e > 0).toList(),
+        startDate: DateTime.tryParse('${j['start_date']}') ?? DateTime.now(),
+        slot: _s(j['slot']) ?? '',
+        slotLabel: _s(j['slot_label']) ?? '',
+        address: _s(j['address']) ?? '',
+        pincode: _s(j['pincode']) ?? '',
+        reminders: j['reminders'] != false,
+        balance: _d(j['balance']),
+        lowBalance: j['low_balance'] == true,
+        firstPayment: _d(j['first_payment']),
+        deliveriesFirstPeriod: _i(j['deliveries_first_period']) ?? 0,
+        nextDelivery: j['next_delivery'] == null ? null : DateTime.tryParse('${j['next_delivery']}'),
+        today: j['today'] is Map ? MilkDeliveryInfo.fromJson(Map<String, dynamic>.from(j['today'] as Map)) : null,
+        calendar: _list(j['calendar'])
+            .map((c) => MilkDay(DateTime.tryParse('${c['date']}') ?? DateTime.now(), _s(c['state']) ?? 'none', c['in_pattern'] == true, c['can_change'] == true, _i(c['delivery_id'])))
+            .toList(),
+        recentDeliveries: _list(j['recent_deliveries']).map(MilkDeliveryInfo.fromJson).toList(),
+        transactions: _list(j['transactions'])
+            .map((t) => MilkTransaction(_s(t['type']) ?? '', _d(t['amount']), t['balance_after'] == null ? null : _d(t['balance_after']), _s(t['description']) ?? '', _date(t['created_at'])))
+            .toList(),
+      );
+
+  bool get isActive => status == 'active';
+  bool get awaitingPayment => status == 'pending_payment';
+
+  MilkDay? dayFor(DateTime d) {
+    for (final c in calendar) {
+      if (c.date.year == d.year && c.date.month == d.month && c.date.day == d.day) return c;
+    }
+    return null;
+  }
+}
+
+// ───────────────────────── Staff milk round (server: Api/Staff/StaffMilkController.php) ─────────────────────────
+
+class MilkStop {
+  final int id;
+  final int position;
+  final String status; // scheduled | delivered | exception
+  final String statusLabel;
+  final int litres;
+  final double amount;
+  final int bottlesOut;
+  final int bottlesBack;
+  final String? exceptionReason;
+  final String? note;
+  final DateTime? deliveredAt;
+  final String subscriptionNumber;
+  final String customerName;
+  final String phone;
+  final String address;
+  final String pincode;
+  final String slotLabel;
+  final String? customerNote;
+  final double balance;
+  final bool lowBalance;
+
+  const MilkStop({
+    required this.id,
+    required this.position,
+    required this.status,
+    required this.statusLabel,
+    required this.litres,
+    required this.amount,
+    required this.bottlesOut,
+    required this.bottlesBack,
+    this.exceptionReason,
+    this.note,
+    this.deliveredAt,
+    required this.subscriptionNumber,
+    required this.customerName,
+    required this.phone,
+    required this.address,
+    required this.pincode,
+    required this.slotLabel,
+    this.customerNote,
+    required this.balance,
+    required this.lowBalance,
+  });
+
+  factory MilkStop.fromJson(Map<String, dynamic> j) => MilkStop(
+        id: _i(j['id']) ?? 0,
+        position: _i(j['position']) ?? 0,
+        status: _s(j['status']) ?? 'scheduled',
+        statusLabel: _s(j['status_label']) ?? '',
+        litres: _i(j['litres']) ?? 0,
+        amount: _d(j['amount']),
+        bottlesOut: _i(j['bottles_out']) ?? 0,
+        bottlesBack: _i(j['bottles_back']) ?? 0,
+        exceptionReason: _s(j['exception_reason']),
+        note: _s(j['note']),
+        deliveredAt: _date(j['delivered_at']),
+        subscriptionNumber: _s(j['subscription_number']) ?? '',
+        customerName: _s(j['customer_name']) ?? '',
+        phone: _s(j['phone']) ?? '',
+        address: _s(j['address']) ?? '',
+        pincode: _s(j['pincode']) ?? '',
+        slotLabel: _s(j['slot_label']) ?? '',
+        customerNote: _s(j['customer_note']),
+        balance: _d(j['balance']),
+        lowBalance: j['low_balance'] == true,
+      );
+
+  bool get isPending => status == 'scheduled';
+  bool get isDelivered => status == 'delivered';
+  bool get isException => status == 'exception';
+}
+
+class StaffRouteInfo {
+  final int id; // 0 = customers not on a route yet
+  final String name;
+  final String? area;
+  final String? staffName;
+  const StaffRouteInfo(this.id, this.name, this.area, this.staffName);
+
+  factory StaffRouteInfo.fromJson(Map<String, dynamic> j) => StaffRouteInfo(_i(j['id']) ?? 0, _s(j['name']) ?? '', _s(j['area']), _s(j['staff_name']));
+}
+
+class StaffMilkDay {
+  final DateTime date;
+  final StaffRouteInfo route;
+  final List<StaffRouteInfo> routes;
+  final DateTime? shiftStarted;
+  final DateTime? shiftEnded;
+  final int litresLoaded;
+  final int bottlesLoaded;
+  final int bottlesReturned;
+  final List<MilkStop> stops;
+  final Map<String, dynamic> summary;
+  final List<KeyLabel> exceptionReasons;
+
+  const StaffMilkDay({
+    required this.date,
+    required this.route,
+    required this.routes,
+    this.shiftStarted,
+    this.shiftEnded,
+    this.litresLoaded = 0,
+    this.bottlesLoaded = 0,
+    this.bottlesReturned = 0,
+    required this.stops,
+    required this.summary,
+    required this.exceptionReasons,
+  });
+
+  factory StaffMilkDay.fromJson(Map<String, dynamic> j) {
+    final shift = j['shift'] is Map ? Map<String, dynamic>.from(j['shift'] as Map) : const <String, dynamic>{};
+    return StaffMilkDay(
+      date: DateTime.tryParse('${j['date']}') ?? DateTime.now(),
+      route: StaffRouteInfo.fromJson(Map<String, dynamic>.from(j['route'] as Map)),
+      routes: _list(j['routes']).map(StaffRouteInfo.fromJson).toList(),
+      shiftStarted: _date(shift['started_at']),
+      shiftEnded: _date(shift['ended_at']),
+      litresLoaded: _i(shift['litres_loaded']) ?? 0,
+      bottlesLoaded: _i(shift['bottles_loaded']) ?? 0,
+      bottlesReturned: _i(shift['bottles_returned']) ?? 0,
+      stops: _list(j['stops']).map(MilkStop.fromJson).toList(),
+      summary: j['summary'] is Map ? Map<String, dynamic>.from(j['summary'] as Map) : const {},
+      exceptionReasons: _list(j['exception_reasons']).map((e) => KeyLabel(_s(e['key']) ?? '', _s(e['label']) ?? '')).toList(),
+    );
+  }
+
+  int sum(String key) => _i(summary[key]) ?? 0;
+  double amountOf(String key) => _d(summary[key]);
+  List<MilkStop> get pending => stops.where((s) => s.isPending).toList();
+  MilkStop? get next => pending.isEmpty ? null : pending.first;
+
+  MilkStop? stopById(int? id) {
+    for (final s in stops) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  List<(String, int)> get exceptionCounts =>
+      _list(summary['exception_reasons']).map((e) => (_s(e['reason']) ?? '', _i(e['count']) ?? 0)).toList();
+}

@@ -12,7 +12,6 @@ import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../../widgets/feedback.dart';
 import '../../widgets/fields.dart';
-import '../../widgets/illustrations.dart';
 import '../../widgets/product_widgets.dart';
 import '../../widgets/u_scaffold.dart';
 
@@ -274,8 +273,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
           Text('#${o.number}', style: T.sans(11.5, color: AppColors.muted, weight: FontWeight.w600)),
         ]),
         const Gap(12),
-        if (!o.isCancelled) RouteMap(height: 150, animated: o.status == 'dispatched'),
-        const Gap(16),
+        const Gap(8),
         if (!o.isCancelled && !o.isDelivered) ...[
           Eyebrow(eta),
           const Gap(6),

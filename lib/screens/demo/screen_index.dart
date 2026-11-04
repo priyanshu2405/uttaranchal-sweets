@@ -45,7 +45,7 @@ class ScreenIndexScreen extends StatelessWidget {
     ('31', 'Account & referrals', R.account),
     ('32', 'Our story & visit us', R.story),
     ('33', 'Notifications', R.notifications),
-    ('34', 'Help & language', R.help),
+    ('34', 'Help', R.help),
     ('··', 'Favourites', R.favourites),
     ('··', 'FAQ & policies', R.info),
   ];
