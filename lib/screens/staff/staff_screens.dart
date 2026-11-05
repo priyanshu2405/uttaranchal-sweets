@@ -392,7 +392,14 @@ class _StaffStopScreenState extends _DayState<StaffStopScreen> {
           icon: Icons.photo_camera_outlined,
           title: 'Report damaged bottle / packet',
           subtitle: 'Photo, place and time go to the shop for approval',
-          onTap: () => go(context, R.staffDamage, args: s.id),
+          onTap: () {
+            final why = _damageBlocked(app.staffDay);
+            if (why != null) {
+              toast(context, why);
+            } else {
+              go(context, R.staffDamage, args: s.id);
+            }
+          },
           divider: false,
         ),
       ],
@@ -694,6 +701,14 @@ class _StaffSummaryScreenState extends _DayState<StaffSummaryScreen> {
   }
 }
 
+/// Null when damage can be reported; otherwise the reason (no round started / no milk left).
+String? _damageBlocked(StaffMilkDay? day) {
+  if (day == null) return null;
+  if (day.litresLoaded <= 0) return 'Start your round and enter the milk loaded first. Damage can only be reported for milk you have with you.';
+  if (day.stockOf('available') <= 0) return 'You have no milk left on your round, so there is nothing to report as damaged.';
+  return null;
+}
+
 // ───────────────────────── Report damaged milk ─────────────────────────
 /// Camera-only photo + location + time. The shop approves it in Admin → Damage Reports;
 /// approved damage is counted in the delivery person's milk stock.
@@ -814,10 +829,31 @@ class _StaffDamageScreenState extends State<StaffDamageScreen> {
     final items = day?.damageItems.isNotEmpty == true ? day!.damageItems : const [DamageItem('bottle', 'Bottle', 1), DamageItem('packet', 'Packet', 0.5)];
     final reasons = day?.damageReasons ?? const <KeyLabel>[];
     final item = items.firstWhere((i) => i.key == (_item ?? items.first.key), orElse: () => items.first);
-    final litres = item.litres * _count;
     final stop = day?.stopById(widget.deliveryId);
     final firstAt = _photos.isEmpty ? null : _photos.first.$2;
     String fmt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+    final blocked = _damageBlocked(day);
+    final available = day?.stockOf('available') ?? 0;
+    // The most of this item that fits in the milk still with the rider.
+    final maxCount = item.litres <= 0 ? 1 : ((available + 0.001) / item.litres).floor().clamp(0, 100);
+    if (maxCount > 0 && _count > maxCount) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _count = maxCount);
+      });
+    }
+    final litres = item.litres * _count;
+    if (blocked != null) {
+      return UScaffold(title: 'Report damage', subtitle: _subtitle, trailing: null, children: [
+        const Gap(30),
+        const Center(child: Icon(Icons.inventory_2_outlined, size: 52, color: AppColors.border)),
+        const Gap(14),
+        Text('Nothing to report right now', textAlign: TextAlign.center, style: T.display(26)),
+        const Gap(8),
+        Text(blocked, textAlign: TextAlign.center, style: T.body()),
+        const Gap(20),
+        if (day != null && day.litresLoaded <= 0) PrimaryButton('Go to my round', color: AppColors.teal, onTap: () => goTab(context, R.staffDashboard)),
+      ]);
+    }
     return UScaffold(
       title: 'Report damage',
       subtitle: _subtitle,
@@ -835,6 +871,8 @@ class _StaffDamageScreenState extends State<StaffDamageScreen> {
         const Gap(4),
         Text('Add up to $_maxPhotos photos — e.g. the damage close up and the whole crate. The shop checks the photos, place and time before approving.', style: T.small()),
         if (stop != null) ...[const Gap(10), Note('At stop ${stop.position}: ${stop.customerName}', tone: NoteTone.mint)],
+        const Gap(10),
+        Note('Milk with you now: ${fmt(available)} L. You can report up to this much as damaged.', tone: NoteTone.mint),
         const Gap(14),
         if (_photos.isEmpty)
           GestureDetector(
@@ -918,14 +956,25 @@ class _StaffDamageScreenState extends State<StaffDamageScreen> {
           ),
         ],
         const FieldLabel('What was damaged?'),
-        ChipGroup(options: items.map((i) => '${i.label} (${fmt(i.litres)} L)').toList(), selected: '${item.label} (${fmt(item.litres)} L)', onSelected: (v) => setState(() => _item = items.firstWhere((i) => v.startsWith(i.label)).key)),
+        ChipGroup(
+          options: items.map((i) => '${i.label} (${fmt(i.litres)} L)').toList(),
+          selected: '${item.label} (${fmt(item.litres)} L)',
+          onSelected: (v) {
+            final picked = items.firstWhere((i) => v.startsWith(i.label));
+            if (picked.litres > available + 0.001) {
+              toast(context, 'Only ${fmt(available)} L left — less than one ${picked.label.toLowerCase()}');
+              return;
+            }
+            setState(() => _item = picked.key);
+          },
+        ),
         const Gap(12),
         Row(children: [
           Expanded(child: Text('How many?', style: T.sans(13, weight: FontWeight.w600))),
-          QtyStepper(value: _count, min: 1, max: 100, onChanged: (v) => setState(() => _count = v)),
+          QtyStepper(value: _count, min: 1, max: maxCount < 1 ? 1 : maxCount, onChanged: (v) => setState(() => _count = v)),
         ]),
         const Gap(4),
-        Text('${fmt(litres)} litres of milk', style: T.small(AppColors.teal)),
+        Text('${fmt(litres)} litres of milk${maxCount > 0 ? ' · up to $maxCount' : ''}', style: T.small(AppColors.teal)),
         const FieldLabel('What happened?'),
         ChipGroup(
           options: reasons.map((r) => r.label).toList(),
@@ -951,9 +1000,22 @@ class _DamageSection extends StatelessWidget {
       const Gap(16),
       Row(children: [
         Expanded(child: Text('Damaged milk', style: T.display(22))),
-        SmallButton('Report damage', icon: Icons.photo_camera_outlined, color: AppColors.teal, onTap: () => go(context, R.staffDamage)),
+        SmallButton(
+          'Report damage',
+          icon: Icons.photo_camera_outlined,
+          color: _damageBlocked(day) == null ? AppColors.teal : AppColors.border,
+          onTap: () {
+            final why = _damageBlocked(day);
+            if (why != null) {
+              toast(context, why);
+            } else {
+              go(context, R.staffDamage);
+            }
+          },
+        ),
       ]),
       const Gap(8),
+      if (day.litresLoaded > 0) Text('Milk with you now: ${fmt(day.stockOf('available'))} L', style: T.tiny(AppColors.teal)),
       if (day.damageReports.isEmpty) Text('No damage reported today.', style: T.small()),
       for (final r in day.damageReports)
         Container(
