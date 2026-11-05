@@ -1,7 +1,7 @@
 name: uttaranchal_app
 description: "Uttaranchal Dairy & Sweets — customer app + shop staff app, connected to the website (Laravel API)."
 publish_to: 'none'
-version: 1.2.1+4
+version: 1.3.0+5
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -16,6 +16,7 @@ dependencies:
   url_launcher: ^6.3.0        # directions, call the shop
   geolocator: ^13.0.2         # "use my current location" for the address
   geocoding: ^3.0.0           # turns the location into pincode / street / city
+  image_picker: ^1.1.2        # staff: photo of damaged milk (camera only)
 
 dev_dependencies:
   flutter_test:

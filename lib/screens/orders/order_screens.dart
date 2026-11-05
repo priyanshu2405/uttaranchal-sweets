@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/nav.dart';
 import '../../app/routes.dart';
@@ -14,6 +15,19 @@ import '../../widgets/feedback.dart';
 import '../../widgets/fields.dart';
 import '../../widgets/product_widgets.dart';
 import '../../widgets/u_scaffold.dart';
+
+/// Opens the order's PDF invoice (a short-lived link from the server) in the phone's PDF viewer / browser,
+/// where it can be saved or shared.
+Future<void> openInvoice(BuildContext context, String number) async {
+  toast(context, 'Preparing your invoice…');
+  try {
+    final url = await context.appRead.invoiceLink(number);
+    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) toast(context, 'Couldn’t open the invoice. Please try again.');
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message);
+  }
+}
 
 String orderDate(DateTime? d) {
   if (d == null) return '';
@@ -308,7 +322,8 @@ class _TrackingScreenState extends State<TrackingScreen> {
           const Gap(8),
           Center(child: TextButton(onPressed: () => _cancel(o), child: Text('Cancel this order', style: T.sans(12.5, color: AppColors.berry, weight: FontWeight.w600)))),
         ],
-        ActionRow(icon: Icons.receipt_long_outlined, title: 'View receipt', subtitle: 'Items, GST and payment', onTap: () => go(context, R.receipt, args: o.number), divider: false),
+        ActionRow(icon: Icons.receipt_long_outlined, title: 'View receipt', subtitle: 'Items, GST and payment', onTap: () => go(context, R.receipt, args: o.number)),
+        ActionRow(icon: Icons.download_rounded, title: 'Download invoice', subtitle: 'PDF to save or share', onTap: () => openInvoice(context, o.number), divider: false),
       ],
     );
   }
@@ -446,7 +461,9 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
           ]),
         ),
         const Gap(12),
-        Note(gstin != null && gstin.isNotEmpty ? 'GSTIN $gstin · Prices include GST.' : 'Prices include GST. A detailed invoice is emailed with your order.'),
+        PrimaryButton('Download invoice (PDF)', icon: Icons.download_rounded, onTap: () => openInvoice(context, o.number)),
+        const Gap(12),
+        Note(gstin != null && gstin.isNotEmpty ? 'GSTIN $gstin · Prices include GST.' : 'Prices include GST.'),
       ],
     );
   }

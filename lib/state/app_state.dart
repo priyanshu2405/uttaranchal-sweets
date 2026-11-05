@@ -718,6 +718,12 @@ class AppState extends ChangeNotifier {
     return o;
   }
 
+  /// A short-lived link to the order's PDF invoice (opened in the phone's browser / PDF viewer).
+  Future<String> invoiceLink(String number) async {
+    final res = await api.get('/orders/$number/invoice', headers: _orderHeaders(number));
+    return '${res['url']}';
+  }
+
   Future<ShopOrder> trackOrder(String number, String contact) async {
     final res = await api.post('/track', {'number': number, 'contact': contact}, ApiAuth.none);
     return ShopOrder.fromJson(Map<String, dynamic>.from(res['order'] as Map));
@@ -1084,8 +1090,42 @@ class AppState extends ChangeNotifier {
     _setDay(await api.post('/staff/milk/shift/start', {..._routeParam, 'litres_loaded': litresLoaded, 'bottles_loaded': bottlesLoaded}, ApiAuth.staff));
   }
 
-  Future<void> staffEndShift({required int bottlesReturned, String? note}) async {
-    _setDay(await api.post('/staff/milk/shift/end', {..._routeParam, 'bottles_returned': bottlesReturned, if (note != null && note.isNotEmpty) 'note': note}, ApiAuth.staff));
+  Future<void> staffEndShift({required int bottlesReturned, int litresReturned = 0, String? note}) async {
+    _setDay(await api.post('/staff/milk/shift/end', {
+      ..._routeParam,
+      'bottles_returned': bottlesReturned,
+      'litres_returned': litresReturned,
+      if (note != null && note.isNotEmpty) 'note': note,
+    }, ApiAuth.staff));
+  }
+
+  /// Report damaged bottles / packets with a camera photo, location and time. The shop approves it in the admin panel.
+  Future<String> staffReportDamage({
+    required String photoPath,
+    required String itemType,
+    required int count,
+    required String reason,
+    String? note,
+    double? latitude,
+    double? longitude,
+    double? accuracy,
+    required DateTime capturedAt,
+    int? deliveryId,
+  }) async {
+    final res = await api.upload('/staff/milk/damage', auth: ApiAuth.staff, fileField: 'photo', filePath: photoPath, fields: {
+      if (staffRouteId != null) 'route_id': '$staffRouteId',
+      'item_type': itemType,
+      'count': '$count',
+      'reason': reason,
+      if (note != null && note.isNotEmpty) 'note': note,
+      if (latitude != null) 'latitude': latitude.toStringAsFixed(7),
+      if (longitude != null) 'longitude': longitude.toStringAsFixed(7),
+      if (accuracy != null) 'accuracy': accuracy.toStringAsFixed(1),
+      'captured_at': capturedAt.toUtc().toIso8601String(),
+      if (deliveryId != null) 'delivery_id': '$deliveryId',
+    });
+    await loadStaffDay();
+    return '${res['message'] ?? 'Damage reported'}';
   }
 
   Future<String> staffDeliver(int id, {int bottlesBack = 0, String? note}) async {

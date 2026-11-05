@@ -62,6 +62,7 @@ class R {
   static const staffException = '/staff/exception'; // 40
   static const staffStock = '/staff/stock'; // 41
   static const staffSummary = '/staff/summary'; // 42
+  static const staffDamage = '/staff/damage'; // arg: delivery id (optional)
   static const staffOrders = '/staff/orders'; // live shop orders (website + app)
   static const staffOrder = '/staff/order'; // arg: order id
   static const staffProducts = '/staff/products'; // stock

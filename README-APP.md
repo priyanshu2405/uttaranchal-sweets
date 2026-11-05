@@ -95,3 +95,10 @@ Staff app:
 - Everything shows live in the website admin under Milk & Delivery.
 
 No new plugins in this update. After copying: `flutter pub get`, `flutter analyze`, `flutter run`.
+
+## Update 4 — damage reports & invoices
+- Staff: "Report damage" (round summary, milk & bottles, or at a stop): camera-only photo, location and time
+  are captured automatically; the shop approves in Admin → Damage Reports. Summary shows status and a stock check.
+  End of round also asks for unsold milk brought back.
+- Customers: "Download invoice (PDF)" on the receipt and order tracking screens.
+- New plugin: image_picker (camera). iOS camera permission text added to Info.plist.

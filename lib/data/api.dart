@@ -72,6 +72,16 @@ class ApiClient {
 
   Future<Map<String, dynamic>> delete(String path, [Object? body, ApiAuth auth = ApiAuth.user]) => _send('DELETE', path, body: body, auth: auth);
 
+  /// Upload a file with form fields (multipart/form-data), e.g. a photo.
+  Future<Map<String, dynamic>> upload(String path, {required Map<String, String> fields, required String fileField, required String filePath, ApiAuth auth = ApiAuth.user}) async {
+    final req = http.MultipartRequest('POST', _uri(path));
+    final headers = _headers(auth, null)..remove('Content-Type');
+    req.headers.addAll(headers);
+    req.fields.addAll(fields);
+    req.files.add(await http.MultipartFile.fromPath(fileField, filePath));
+    return _handle(() => _http.send(req).timeout(const Duration(seconds: 60)), auth);
+  }
+
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {
@@ -79,13 +89,16 @@ class ApiClient {
     Object? body,
     ApiAuth auth = ApiAuth.user,
     Map<String, String>? headers,
-  }) async {
+  }) {
     final req = http.Request(method, _uri(path, query))..headers.addAll(_headers(auth, headers));
     if (body != null) req.body = jsonEncode(body);
+    return _handle(() => _http.send(req).timeout(const Duration(seconds: 25)), auth);
+  }
 
+  Future<Map<String, dynamic>> _handle(Future<http.StreamedResponse> Function() send, ApiAuth auth) async {
     http.Response res;
     try {
-      res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 25)));
+      res = await http.Response.fromStream(await send());
     } on SocketException {
       throw const ApiException('No internet connection. Please check your network and try again.');
     } on TimeoutException {

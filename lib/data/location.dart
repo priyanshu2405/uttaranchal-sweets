@@ -64,3 +64,16 @@ Future<DetectedAddress> detectCurrentAddress() async {
 
 Future<bool> openPhoneLocationSettings() => Geolocator.openLocationSettings();
 Future<bool> openAppPermissionSettings() => Geolocator.openAppSettings();
+
+/// Best-effort GPS fix for staff reports. Returns null (instead of failing) when location is off or not allowed.
+Future<Position?> currentPositionOrNull() async {
+  try {
+    if (!await Geolocator.isLocationServiceEnabled()) return null;
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return null;
+    return await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 20)));
+  } catch (_) {
+    return null;
+  }
+}

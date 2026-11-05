@@ -786,6 +786,55 @@ class StaffRouteInfo {
   factory StaffRouteInfo.fromJson(Map<String, dynamic> j) => StaffRouteInfo(_i(j['id']) ?? 0, _s(j['name']) ?? '', _s(j['area']), _s(j['staff_name']));
 }
 
+class DamageReport {
+  final int id;
+  final String itemLabel;
+  final int count;
+  final double litres;
+  final String reasonLabel;
+  final String? note;
+  final String status; // pending | approved | rejected
+  final String statusLabel;
+  final String? reviewNote;
+  final bool hasLocation;
+  final DateTime? capturedAt;
+
+  const DamageReport({
+    required this.id,
+    required this.itemLabel,
+    required this.count,
+    required this.litres,
+    required this.reasonLabel,
+    this.note,
+    required this.status,
+    required this.statusLabel,
+    this.reviewNote,
+    required this.hasLocation,
+    this.capturedAt,
+  });
+
+  factory DamageReport.fromJson(Map<String, dynamic> j) => DamageReport(
+        id: _i(j['id']) ?? 0,
+        itemLabel: _s(j['item_label']) ?? '',
+        count: _i(j['count']) ?? 0,
+        litres: _d(j['litres']),
+        reasonLabel: _s(j['reason_label']) ?? '',
+        note: _s(j['note']),
+        status: _s(j['status']) ?? 'pending',
+        statusLabel: _s(j['status_label']) ?? '',
+        reviewNote: _s(j['review_note']),
+        hasLocation: j['has_location'] == true,
+        capturedAt: _date(j['captured_at']),
+      );
+}
+
+class DamageItem {
+  final String key;
+  final String label;
+  final double litres;
+  const DamageItem(this.key, this.label, this.litres);
+}
+
 class StaffMilkDay {
   final DateTime date;
   final StaffRouteInfo route;
@@ -795,9 +844,14 @@ class StaffMilkDay {
   final int litresLoaded;
   final int bottlesLoaded;
   final int bottlesReturned;
+  final int litresReturned;
   final List<MilkStop> stops;
   final Map<String, dynamic> summary;
   final List<KeyLabel> exceptionReasons;
+  final List<DamageReport> damageReports;
+  final Map<String, dynamic> stock;
+  final List<DamageItem> damageItems;
+  final List<KeyLabel> damageReasons;
 
   const StaffMilkDay({
     required this.date,
@@ -808,13 +862,19 @@ class StaffMilkDay {
     this.litresLoaded = 0,
     this.bottlesLoaded = 0,
     this.bottlesReturned = 0,
+    this.litresReturned = 0,
     required this.stops,
     required this.summary,
     required this.exceptionReasons,
+    this.damageReports = const [],
+    this.stock = const {},
+    this.damageItems = const [],
+    this.damageReasons = const [],
   });
 
   factory StaffMilkDay.fromJson(Map<String, dynamic> j) {
     final shift = j['shift'] is Map ? Map<String, dynamic>.from(j['shift'] as Map) : const <String, dynamic>{};
+    final damage = j['damage'] is Map ? Map<String, dynamic>.from(j['damage'] as Map) : const <String, dynamic>{};
     return StaffMilkDay(
       date: DateTime.tryParse('${j['date']}') ?? DateTime.now(),
       route: StaffRouteInfo.fromJson(Map<String, dynamic>.from(j['route'] as Map)),
@@ -824,6 +884,11 @@ class StaffMilkDay {
       litresLoaded: _i(shift['litres_loaded']) ?? 0,
       bottlesLoaded: _i(shift['bottles_loaded']) ?? 0,
       bottlesReturned: _i(shift['bottles_returned']) ?? 0,
+      litresReturned: _i(shift['litres_returned']) ?? 0,
+      damageReports: _list(damage['reports']).map(DamageReport.fromJson).toList(),
+      stock: damage['stock'] is Map ? Map<String, dynamic>.from(damage['stock'] as Map) : const {},
+      damageItems: _list(j['damage_items']).map((e) => DamageItem(_s(e['key']) ?? '', _s(e['label']) ?? '', _d(e['litres']))).toList(),
+      damageReasons: _list(j['damage_reasons']).map((e) => KeyLabel(_s(e['key']) ?? '', _s(e['label']) ?? '')).toList(),
       stops: _list(j['stops']).map(MilkStop.fromJson).toList(),
       summary: j['summary'] is Map ? Map<String, dynamic>.from(j['summary'] as Map) : const {},
       exceptionReasons: _list(j['exception_reasons']).map((e) => KeyLabel(_s(e['key']) ?? '', _s(e['label']) ?? '')).toList(),
@@ -831,6 +896,8 @@ class StaffMilkDay {
   }
 
   int sum(String key) => _i(summary[key]) ?? 0;
+  double stockOf(String key) => _d(stock[key]);
+  int get pendingDamage => damageReports.where((r) => r.status == 'pending').length;
   double amountOf(String key) => _d(summary[key]);
   List<MilkStop> get pending => stops.where((s) => s.isPending).toList();
   MilkStop? get next => pending.isEmpty ? null : pending.first;

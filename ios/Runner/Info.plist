@@ -57,5 +57,9 @@
 		<false/>
 		<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used to fill in your delivery address.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used by delivery staff to photograph damaged milk bottles or packets.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photos are only taken with the camera to report damaged milk.</string>
 </dict>
 </plist>

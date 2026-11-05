@@ -66,6 +66,7 @@ class AppRouter {
       R.staffException => StaffExceptionScreen(stopNumber: intArg),
       R.staffStock => const StaffStockScreen(),
       R.staffSummary => const StaffSummaryScreen(),
+      R.staffDamage => StaffDamageScreen(deliveryId: intArg),
       R.staffOrders => const StaffOrdersScreen(),
       R.staffOrder => StaffOrderScreen(orderId: intArg),
       R.staffProducts => const StaffProductsScreen(),
