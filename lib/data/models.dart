@@ -798,6 +798,7 @@ class DamageReport {
   final String? reviewNote;
   final bool hasLocation;
   final DateTime? capturedAt;
+  final int photosCount;
 
   const DamageReport({
     required this.id,
@@ -811,6 +812,7 @@ class DamageReport {
     this.reviewNote,
     required this.hasLocation,
     this.capturedAt,
+    this.photosCount = 1,
   });
 
   factory DamageReport.fromJson(Map<String, dynamic> j) => DamageReport(
@@ -825,6 +827,7 @@ class DamageReport {
         reviewNote: _s(j['review_note']),
         hasLocation: j['has_location'] == true,
         capturedAt: _date(j['captured_at']),
+        photosCount: _i(j['photos_count']) ?? 1,
       );
 }
 

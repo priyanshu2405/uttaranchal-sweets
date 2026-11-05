@@ -72,14 +72,17 @@ class ApiClient {
 
   Future<Map<String, dynamic>> delete(String path, [Object? body, ApiAuth auth = ApiAuth.user]) => _send('DELETE', path, body: body, auth: auth);
 
-  /// Upload a file with form fields (multipart/form-data), e.g. a photo.
-  Future<Map<String, dynamic>> upload(String path, {required Map<String, String> fields, required String fileField, required String filePath, ApiAuth auth = ApiAuth.user}) async {
+  /// Upload files with form fields (multipart/form-data), e.g. photos.
+  /// [files] are (field name, file path) pairs; repeat a field like "photos[]" to send several.
+  Future<Map<String, dynamic>> upload(String path, {required Map<String, String> fields, required List<(String, String)> files, ApiAuth auth = ApiAuth.user}) async {
     final req = http.MultipartRequest('POST', _uri(path));
     final headers = _headers(auth, null)..remove('Content-Type');
     req.headers.addAll(headers);
     req.fields.addAll(fields);
-    req.files.add(await http.MultipartFile.fromPath(fileField, filePath));
-    return _handle(() => _http.send(req).timeout(const Duration(seconds: 60)), auth);
+    for (final (field, filePath) in files) {
+      req.files.add(await http.MultipartFile.fromPath(field, filePath));
+    }
+    return _handle(() => _http.send(req).timeout(const Duration(seconds: 90)), auth);
   }
 
   Future<Map<String, dynamic>> _send(

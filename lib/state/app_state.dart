@@ -1099,9 +1099,10 @@ class AppState extends ChangeNotifier {
     }, ApiAuth.staff));
   }
 
-  /// Report damaged bottles / packets with a camera photo, location and time. The shop approves it in the admin panel.
+  /// Report damaged bottles / packets with camera photos (each with the time it was taken), location and time.
+  /// The shop approves it in the admin panel.
   Future<String> staffReportDamage({
-    required String photoPath,
+    required List<(String path, DateTime takenAt)> photos,
     required String itemType,
     required int count,
     required String reason,
@@ -1109,10 +1110,9 @@ class AppState extends ChangeNotifier {
     double? latitude,
     double? longitude,
     double? accuracy,
-    required DateTime capturedAt,
     int? deliveryId,
   }) async {
-    final res = await api.upload('/staff/milk/damage', auth: ApiAuth.staff, fileField: 'photo', filePath: photoPath, fields: {
+    final fields = <String, String>{
       if (staffRouteId != null) 'route_id': '$staffRouteId',
       'item_type': itemType,
       'count': '$count',
@@ -1121,9 +1121,13 @@ class AppState extends ChangeNotifier {
       if (latitude != null) 'latitude': latitude.toStringAsFixed(7),
       if (longitude != null) 'longitude': longitude.toStringAsFixed(7),
       if (accuracy != null) 'accuracy': accuracy.toStringAsFixed(1),
-      'captured_at': capturedAt.toUtc().toIso8601String(),
+      'captured_at': photos.first.$2.toUtc().toIso8601String(),
       if (deliveryId != null) 'delivery_id': '$deliveryId',
-    });
+    };
+    for (var i = 0; i < photos.length; i++) {
+      fields['photo_times[$i]'] = photos[i].$2.toUtc().toIso8601String();
+    }
+    final res = await api.upload('/staff/milk/damage', auth: ApiAuth.staff, fields: fields, files: [for (final p in photos) ('photos[]', p.$1)]);
     await loadStaffDay();
     return '${res['message'] ?? 'Damage reported'}';
   }

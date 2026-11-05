@@ -707,8 +707,8 @@ class StaffDamageScreen extends StatefulWidget {
 }
 
 class _StaffDamageScreenState extends State<StaffDamageScreen> {
-  XFile? _photo;
-  DateTime? _takenAt;
+  static const _maxPhotos = 6;
+  final List<(XFile, DateTime)> _photos = [];
   double? _lat;
   double? _lng;
   double? _accuracy;
@@ -725,33 +725,55 @@ class _StaffDamageScreenState extends State<StaffDamageScreen> {
     super.dispose();
   }
 
-  Future<void> _takePhoto() async {
+  /// Opens the camera (never the gallery). [replace] retakes one photo.
+  Future<void> _takePhoto({int? replace}) async {
+    if (replace == null && _photos.length >= _maxPhotos) {
+      toast(context, 'You can add up to $_maxPhotos photos');
+      return;
+    }
     try {
       final x = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1600, maxHeight: 1600, preferredCameraDevice: CameraDevice.rear);
       if (x == null || !mounted) return;
+      final first = _photos.isEmpty;
       setState(() {
-        _photo = x;
-        _takenAt = DateTime.now();
-        _locating = true;
+        if (replace != null) {
+          _photos[replace] = (x, DateTime.now());
+        } else {
+          _photos.add((x, DateTime.now()));
+        }
       });
-      final pos = await currentPositionOrNull();
-      if (!mounted) return;
-      setState(() {
-        _lat = pos?.latitude;
-        _lng = pos?.longitude;
-        _accuracy = pos?.accuracy;
-        _locating = false;
-      });
-      if (pos == null) toast(context, 'Location is off or not allowed. Turn it on so the shop can approve your report.');
+      // Location is taken with the first photo (and again if it wasn't available yet).
+      if (first || _lat == null) {
+        setState(() => _locating = true);
+        final pos = await currentPositionOrNull();
+        if (!mounted) return;
+        setState(() {
+          _lat = pos?.latitude ?? _lat;
+          _lng = pos?.longitude ?? _lng;
+          _accuracy = pos?.accuracy ?? _accuracy;
+          _locating = false;
+        });
+        if (pos == null) toast(context, 'Location is off or not allowed. Turn it on so the shop can approve your report.');
+      }
     } catch (e) {
       if (mounted) toast(context, 'Couldn’t open the camera. Please allow camera access in Settings.');
     }
   }
 
+  Future<void> _photoOptions(int i) async {
+    final v = await pickOption(context, title: 'Photo ${i + 1}', options: const ['Retake this photo', 'Remove this photo']);
+    if (!mounted || v == null) return;
+    if (v.startsWith('Retake')) {
+      _takePhoto(replace: i);
+    } else {
+      setState(() => _photos.removeAt(i));
+    }
+  }
+
   Future<void> _submit() async {
     final day = context.appRead.staffDay;
-    if (_photo == null) {
-      toast(context, 'Please take a photo of the damaged milk');
+    if (_photos.isEmpty) {
+      toast(context, 'Please take at least one photo of the damaged milk');
       return;
     }
     final item = _item ?? (day != null && day.damageItems.isNotEmpty ? day.damageItems.first.key : 'bottle');
@@ -760,13 +782,13 @@ class _StaffDamageScreenState extends State<StaffDamageScreen> {
       return;
     }
     if (_lat == null) {
-      final ok = await confirmDialog(context, title: 'Send without location?', message: 'The shop may reject reports without a location. You can turn location on and retake the photo instead.', confirm: 'Send anyway', color: AppColors.teal);
+      final ok = await confirmDialog(context, title: 'Send without location?', message: 'The shop may reject reports without a location. You can turn location on and take the photos again instead.', confirm: 'Send anyway', color: AppColors.teal);
       if (!ok || !mounted) return;
     }
     setState(() => _busy = true);
     try {
       final msg = await context.appRead.staffReportDamage(
-        photoPath: _photo!.path,
+        photos: [for (final (x, t) in _photos) (x.path, t)],
         itemType: item,
         count: _count,
         reason: _reason!,
@@ -774,7 +796,6 @@ class _StaffDamageScreenState extends State<StaffDamageScreen> {
         latitude: _lat,
         longitude: _lng,
         accuracy: _accuracy,
-        capturedAt: _takenAt ?? DateTime.now(),
         deliveryId: widget.deliveryId,
       );
       if (!mounted) return;
@@ -795,50 +816,102 @@ class _StaffDamageScreenState extends State<StaffDamageScreen> {
     final item = items.firstWhere((i) => i.key == (_item ?? items.first.key), orElse: () => items.first);
     final litres = item.litres * _count;
     final stop = day?.stopById(widget.deliveryId);
+    final firstAt = _photos.isEmpty ? null : _photos.first.$2;
     String fmt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
     return UScaffold(
       title: 'Report damage',
       subtitle: _subtitle,
       trailing: null,
-      bottom: PrimaryButton(_busy ? 'Sending…' : 'Send to the shop', color: AppColors.teal, icon: Icons.send_rounded, onTap: _busy ? null : _submit),
+      bottom: PrimaryButton(
+        _busy ? 'Sending ${_photos.length} photo${_photos.length == 1 ? '' : 's'}…' : 'Send to the shop',
+        color: AppColors.teal,
+        icon: Icons.send_rounded,
+        onTap: _busy ? null : _submit,
+      ),
       children: [
         const Eyebrow('Damaged bottle or packet'),
         const Gap(10),
-        Text('Take a photo right now', style: T.display(28)),
+        Text('Take photos right now', style: T.display(28)),
         const Gap(4),
-        Text('The shop checks the photo, place and time before approving. Approved damage isn’t counted as a shortage on your round.', style: T.small()),
+        Text('Add up to $_maxPhotos photos — e.g. the damage close up and the whole crate. The shop checks the photos, place and time before approving.', style: T.small()),
         if (stop != null) ...[const Gap(10), Note('At stop ${stop.position}: ${stop.customerName}', tone: NoteTone.mint)],
         const Gap(14),
-        GestureDetector(
-          onTap: _busy ? null : _takePhoto,
-          child: Container(
-            height: 220,
-            width: double.infinity,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
-            child: _photo == null
-                ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.photo_camera_rounded, size: 46, color: AppColors.teal),
-                    const Gap(8),
-                    Text('Open camera', style: T.sans(14, weight: FontWeight.w700, color: AppColors.teal)),
-                    Text('Photos from the gallery can’t be used', style: T.tiny()),
-                  ])
-                : Stack(fit: StackFit.expand, children: [
-                    Image.file(File(_photo!.path), fit: BoxFit.cover),
+        if (_photos.isEmpty)
+          GestureDetector(
+            onTap: _busy ? null : () => _takePhoto(),
+            child: Container(
+              height: 200,
+              width: double.infinity,
+              decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.photo_camera_rounded, size: 46, color: AppColors.teal),
+                const Gap(8),
+                Text('Open camera', style: T.sans(14, weight: FontWeight.w700, color: AppColors.teal)),
+                Text('Photos from the gallery can’t be used', style: T.tiny()),
+              ]),
+            ),
+          )
+        else
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            children: [
+              for (var i = 0; i < _photos.length; i++)
+                GestureDetector(
+                  onTap: _busy ? null : () => _photoOptions(i),
+                  child: Stack(fit: StackFit.expand, children: [
+                    ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(_photos[i].$1.path), fit: BoxFit.cover)),
                     Positioned(
-                      right: 10,
-                      bottom: 10,
-                      child: SmallButton('Retake', icon: Icons.refresh_rounded, color: AppColors.teal, onTap: _busy ? null : _takePhoto),
+                      left: 6,
+                      top: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: const Color(0xAA000000), borderRadius: BorderRadius.circular(6)),
+                        child: Text('${i + 1} · ${_clock(_photos[i].$2)}', style: T.sans(9.5, color: AppColors.white, weight: FontWeight.w600)),
+                      ),
+                    ),
+                    Positioned(
+                      right: 4,
+                      top: 4,
+                      child: GestureDetector(
+                        onTap: _busy ? null : () => setState(() => _photos.removeAt(i)),
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: const BoxDecoration(color: Color(0xCC000000), shape: BoxShape.circle),
+                          child: const Icon(Icons.close_rounded, size: 15, color: AppColors.white),
+                        ),
+                      ),
                     ),
                   ]),
+                ),
+              if (_photos.length < _maxPhotos)
+                GestureDetector(
+                  onTap: _busy ? null : () => _takePhoto(),
+                  child: Container(
+                    decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.teal)),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const Icon(Icons.add_a_photo_outlined, color: AppColors.teal),
+                      const Gap(4),
+                      Text('Add photo', style: T.sans(11, weight: FontWeight.w600, color: AppColors.teal)),
+                      Text('${_photos.length} of $_maxPhotos', style: T.tiny()),
+                    ]),
+                  ),
+                ),
+            ],
           ),
-        ),
-        if (_photo != null) ...[
+        if (_photos.isNotEmpty) ...[
+          const Gap(4),
+          Text('Tap a photo to retake or remove it.', style: T.tiny()),
           const Gap(10),
           UCard(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             child: Column(children: [
-              KV('Date & time', _takenAt == null ? '—' : '${dayMonth(_takenAt!)} ${_takenAt!.year}, ${_clock(_takenAt!)}'),
+              KV('Photos', '${_photos.length}'),
+              KV('Date & time', firstAt == null ? '—' : '${dayMonth(firstAt)} ${firstAt.year}, ${_clock(firstAt)}'),
               KV('Location', _locating ? 'Finding…' : (_lat == null ? 'Not available' : '${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}'), color: !_locating && _lat == null ? AppColors.berry : null),
               if (_accuracy != null) KV('Accuracy', '±${_accuracy!.round()} m'),
             ]),
@@ -896,7 +969,7 @@ class _DamageSection extends StatelessWidget {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${r.count} × ${r.itemLabel} · ${fmt(r.litres)} L', style: T.sans(13, weight: FontWeight.w600)),
-                Text('${r.reasonLabel}${r.capturedAt != null ? ' · ${_clock(r.capturedAt!)}' : ''}', style: T.tiny()),
+                Text('${r.reasonLabel}${r.capturedAt != null ? ' · ${_clock(r.capturedAt!)}' : ''}${r.photosCount > 1 ? ' · ${r.photosCount} photos' : ''}', style: T.tiny()),
                 if (r.status == 'rejected' && r.reviewNote != null) Text('Shop: ${r.reviewNote}', style: T.tiny(AppColors.berry)),
               ]),
             ),
